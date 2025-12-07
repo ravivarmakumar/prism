@@ -43,8 +43,27 @@ class CourseRAGAgent:
             
             logger.info(f"Retrieved {len(retrieved_chunks)} chunks from vector store for query: '{query}'")
             
-            # For queries about lists, counts, or "all" items, try additional queries to get comprehensive results
+            # Check if query is about a specific module and enhance it
+            import re
             query_lower = query.lower()
+            module_match = re.search(r'module\s+(\d+|[a-z]+)', query_lower, re.IGNORECASE)
+            if module_match:
+                module_ref = module_match.group(1)
+                logger.info(f"Query mentions module {module_ref}. Enhancing query with module context...")
+                # Add module-related terms to improve retrieval
+                enhanced_query = f"{query} module {module_ref} content topics"
+                logger.info(f"Enhanced query: '{enhanced_query}'")
+                # Try enhanced query first
+                enhanced_chunks = self.retriever.retrieve(
+                    query=enhanced_query,
+                    course_name=course_name,
+                    top_k=top_k
+                )
+                if enhanced_chunks:
+                    retrieved_chunks = enhanced_chunks
+                    logger.info(f"Found {len(retrieved_chunks)} chunks with module-enhanced query")
+            
+            # For queries about lists, counts, or "all" items, try additional queries to get comprehensive results
             needs_comprehensive = any(keyword in query_lower for keyword in [
                 "all", "different", "various", "list", "what are", "how many", "name", "types", "kinds"
             ])

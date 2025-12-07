@@ -81,10 +81,13 @@ Adapt your explanation to be {explanation_style}. Use examples and analogies tha
 
 CRITICAL CITATION FORMAT:
 - Use INLINE citations within your response text, NOT at the end
-- Format: (Document_Name, Page X) - use the ACTUAL document name (PDF/PPT name) from the context, NOT "Source"
+- Format: (Document_Name, Page X) for PDFs or (Document_Name, Timestamp) for transcripts
+- Use the ACTUAL document name (PDF/PPT/transcript name) from the context, NOT "Source"
 - Place citations immediately after the information you're citing
-- Example: "The authors are John Doe and Jane Smith (NeuroQuest_Paper, Page 2)."
-- Use the exact document name as shown in the context (e.g., "NeuroQuest_Paper", "Course_Slides", etc.)
+- Examples: 
+  * PDF: "The authors are John Doe and Jane Smith (NeuroQuest_Paper, Page 2)."
+  * Transcript: "As mentioned in the lecture (lecture_transcript, 00:15:30)."
+- Use the exact document name as shown in the context (e.g., "NeuroQuest_Paper", "Course_Slides", "lecture_transcript", etc.)
 - Do NOT use generic terms like "Source 1" or "Source 2" - use the actual document name
 - Do NOT create a separate citations section at the end
 - Integrate citations naturally into your response"""
@@ -230,27 +233,33 @@ CRITICAL INSTRUCTIONS:
             # Filter citations to only include sources actually referenced in the response
             # Extract inline citations from the answer in format (Document_Name, Page X)
             import re
-            # Match inline citation format: (Document_Name, Page X) or (Source_Name, URL)
-            # Pattern matches: (text, Page number) or (text, URL)
+            # Match inline citation format: (Document_Name, Page X) or (Document_Name, Timestamp) or (Source_Name, URL)
+            # Pattern matches: (text, Page number) or (text, Timestamp) or (text, URL)
             inline_citation_pattern = r'\(([^,)]+),\s*(?:Page\s+)?(\d+|[^)]+)\)'
             referenced_citations = []
             
             for match in re.finditer(inline_citation_pattern, answer, re.IGNORECASE):
                 doc_name = match.group(1).strip()
-                page_or_url = match.group(2).strip()
+                page_timestamp_or_url = match.group(2).strip()
                 
-                # Check if it's a page number (digits) or URL
-                if page_or_url.isdigit():
-                    page_num = int(page_or_url)
+                # Check if it's a page number (digits)
+                if page_timestamp_or_url.isdigit():
+                    page_num = int(page_timestamp_or_url)
                     referenced_citations.append({
                         "document": doc_name,
                         "page": page_num
+                    })
+                # Check if it's a timestamp (HH:MM:SS format)
+                elif re.match(r'\d{2}:\d{2}:\d{2}', page_timestamp_or_url):
+                    referenced_citations.append({
+                        "document": doc_name,
+                        "timestamp": page_timestamp_or_url
                     })
                 else:
                     # It's a URL or other format
                     referenced_citations.append({
                         "document": doc_name,
-                        "url": page_or_url
+                        "url": page_timestamp_or_url
                     })
             
             logger.info(f"Found {len(referenced_citations)} inline citations in response")
@@ -263,15 +272,19 @@ CRITICAL INSTRUCTIONS:
             if referenced_citations and not is_from_web and retrieved_chunks:
                 logger.info(f"Filtering citations: {len(referenced_citations)} inline citations found, {len(retrieved_chunks)} chunks available, {len(citations)} total citations")
                 
-                # Create a set of (document, page) tuples from referenced citations for matching
+                # Create a set of (document, page/timestamp) tuples from referenced citations for matching
                 referenced_keys = set()
                 for ref_citation in referenced_citations:
                     doc = ref_citation.get("document", "").strip()
                     page = ref_citation.get("page")
-                    if doc and page is not None:
+                    timestamp = ref_citation.get("timestamp")
+                    if doc and (page is not None or timestamp):
                         # Normalize document name (remove spaces, handle variations)
                         doc_normalized = doc.replace(" ", "_").replace("-", "_").lower()
-                        referenced_keys.add((doc_normalized, page))
+                        if page is not None:
+                            referenced_keys.add((doc_normalized, page, "page"))
+                        elif timestamp:
+                            referenced_keys.add((doc_normalized, timestamp, "timestamp"))
                 
                 # Match referenced citations against actual citations
                 filtered_citations = []
@@ -280,24 +293,39 @@ CRITICAL INSTRUCTIONS:
                 for citation in citations:
                     doc = citation.get("document", "").strip()
                     page = citation.get("page")
+                    timestamp = citation.get("timestamp")
                     
-                    if doc and page is not None:
+                    # Handle both page-based and timestamp-based citations
+                    if doc and (page is not None or timestamp):
                         # Normalize document name for comparison
                         doc_normalized = doc.replace(" ", "_").replace("-", "_").lower()
-                        citation_key = (doc_normalized, page)
                         
                         # Check if this citation matches any referenced citation
                         # Use fuzzy matching to handle variations in document names
                         matches = False
                         for ref_key in referenced_keys:
-                            ref_doc, ref_page = ref_key
-                            # Exact match on page and document name contains the reference or vice versa
-                            if ref_page == page and (ref_doc in doc_normalized or doc_normalized in ref_doc):
-                                matches = True
-                                break
+                            ref_doc, ref_value, ref_type = ref_key
+                            
+                            # Match by type (page or timestamp) and value
+                            if ref_type == "page" and page is not None:
+                                # Exact match on page and document name contains the reference or vice versa
+                                if ref_value == page and (ref_doc in doc_normalized or doc_normalized in ref_doc):
+                                    matches = True
+                                    break
+                            elif ref_type == "timestamp" and timestamp:
+                                # Match timestamp (can be partial match for ranges)
+                                if ref_value in timestamp or timestamp in ref_value or (ref_value == timestamp):
+                                    if ref_doc in doc_normalized or doc_normalized in ref_doc:
+                                        matches = True
+                                        break
                         
                         if matches:
-                            citation_unique_key = (doc, page)
+                            # Create unique key for deduplication
+                            if page is not None:
+                                citation_unique_key = (doc, page, "page")
+                            else:
+                                citation_unique_key = (doc, timestamp, "timestamp")
+                            
                             if citation_unique_key not in seen_citations:
                                 filtered_citations.append(citation)
                                 seen_citations.add(citation_unique_key)
@@ -420,13 +448,31 @@ CRITICAL INSTRUCTIONS:
                     seen_citations = set()
                     unique_citations = []
                     for chunk in retrieved_chunks[:5]:  # Only use top 5 chunks
-                        citation_key = (chunk.get('document_name'), chunk.get('page_number'))
-                        if citation_key not in seen_citations:
-                            unique_citations.append({
-                                "document": chunk.get('document_name', 'Unknown'),
-                                "page": chunk.get('page_number', 'Unknown')
-                            })
-                            seen_citations.add(citation_key)
+                        # Handle both page-based and timestamp-based citations
+                        if chunk.get('page_number'):
+                            citation_key = (chunk.get('document_name'), chunk.get('page_number'), 'page')
+                            if citation_key not in seen_citations:
+                                unique_citations.append({
+                                    "document": chunk.get('document_name', 'Unknown'),
+                                    "page": chunk.get('page_number', 'Unknown')
+                                })
+                                seen_citations.add(citation_key)
+                        elif chunk.get('timestamp'):
+                            citation_key = (chunk.get('document_name'), chunk.get('timestamp'), 'timestamp')
+                            if citation_key not in seen_citations:
+                                unique_citations.append({
+                                    "document": chunk.get('document_name', 'Unknown'),
+                                    "timestamp": chunk.get('timestamp', 'Unknown')
+                                })
+                                seen_citations.add(citation_key)
+                        else:
+                            # Fallback for chunks without page or timestamp
+                            citation_key = (chunk.get('document_name'), None, 'none')
+                            if citation_key not in seen_citations:
+                                unique_citations.append({
+                                    "document": chunk.get('document_name', 'Unknown')
+                                })
+                                seen_citations.add(citation_key)
                     filtered_citations = unique_citations
                     logger.info(f"Limited to top {len(filtered_citations)} citations (from {len(citations)} total) when no sources referenced")
             

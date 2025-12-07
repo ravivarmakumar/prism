@@ -61,8 +61,21 @@ class CourseRetriever:
         context_parts = []
         
         for i, result in enumerate(results, 1):
+            # Build source identifier
+            source_parts = []
+            if result.get('module_name'):
+                source_parts.append(f"Module: {result['module_name']}")
+            source_parts.append(f"Document: {result['document_name']}")
+            
+            # Add page number or timestamp
+            if result.get('page_number'):
+                source_parts.append(f"Page {result['page_number']}")
+            elif result.get('timestamp'):
+                source_parts.append(f"Timestamp: {result['timestamp']}")
+            
+            source_info = ", ".join(source_parts)
             context_parts.append(
-                f"[Source {i}] Page {result['page_number']} from {result['document_name']}:\n"
+                f"[Source {i}] {source_info}:\n"
                 f"{result['content']}\n"
             )
         
@@ -74,12 +87,30 @@ class CourseRetriever:
         seen = set()
         
         for result in results:
-            citation_key = (result['document_name'], result['page_number'])
+            # Create citation key based on document type
+            if result.get('page_number'):
+                citation_key = (result['document_name'], result.get('module_name'), result['page_number'])
+            elif result.get('timestamp'):
+                citation_key = (result['document_name'], result.get('module_name'), result['timestamp'])
+            else:
+                citation_key = (result['document_name'], result.get('module_name'), None)
+            
             if citation_key not in seen:
-                citations.append({
-                    "document": result['document_name'],
-                    "page": result['page_number']
-                })
+                citation = {
+                    "document": result['document_name']
+                }
+                
+                # Add module if present
+                if result.get('module_name'):
+                    citation["module"] = result['module_name']
+                
+                # Add page or timestamp
+                if result.get('page_number'):
+                    citation["page"] = result['page_number']
+                elif result.get('timestamp'):
+                    citation["timestamp"] = result['timestamp']
+                
+                citations.append(citation)
                 seen.add(citation_key)
         
         return citations

@@ -81,22 +81,48 @@ class PineconeVectorStore:
             vectors = []
             for i, (doc, embedding) in enumerate(zip(documents, embeddings)):
                 # Create unique vector ID
-                vector_id = (
-                    f"{doc['course_name']}_{doc['document_name']}_"
-                    f"page{doc['page_number']}_chunk{doc.get('chunk_index', 0)}"
-                )
+                # Handle both PDFs (with page_number) and transcripts (with timestamp)
+                if "page_number" in doc and doc["page_number"]:
+                    vector_id = (
+                        f"{doc['course_name']}_{doc.get('module_name', '')}_{doc['document_name']}_"
+                        f"page{doc['page_number']}_chunk{doc.get('chunk_index', 0)}"
+                    )
+                    page_or_timestamp = doc["page_number"]
+                elif "timestamp" in doc:
+                    vector_id = (
+                        f"{doc['course_name']}_{doc.get('module_name', '')}_{doc['document_name']}_"
+                        f"ts{doc['timestamp'].replace(':', '').replace('-', '')}_chunk{doc.get('chunk_index', 0)}"
+                    )
+                    page_or_timestamp = doc["timestamp"]
+                else:
+                    vector_id = (
+                        f"{doc['course_name']}_{doc.get('module_name', '')}_{doc['document_name']}_"
+                        f"chunk{doc.get('chunk_index', 0)}"
+                    )
+                    page_or_timestamp = None
+                
+                # Build metadata
+                metadata = {
+                    "course_name": doc["course_name"],
+                    "document_name": doc["document_name"],
+                    "content": doc["content"][:1000],  # Limit metadata size
+                    "type": doc.get("type", "text"),
+                    "chunk_index": doc.get("chunk_index", 0)
+                }
+                
+                # Add optional fields
+                if doc.get("module_name"):
+                    metadata["module_name"] = doc["module_name"]
+                if page_or_timestamp:
+                    if "page_number" in doc and doc["page_number"]:
+                        metadata["page_number"] = doc["page_number"]
+                    elif "timestamp" in doc:
+                        metadata["timestamp"] = doc["timestamp"]
                 
                 vectors.append({
                     "id": vector_id,
                     "values": embedding,
-                    "metadata": {
-                        "course_name": doc["course_name"],
-                        "document_name": doc["document_name"],
-                        "page_number": doc["page_number"],
-                        "content": doc["content"][:1000],  # Limit metadata size
-                        "type": doc.get("type", "text"),
-                        "chunk_index": doc.get("chunk_index", 0)
-                    }
+                    "metadata": metadata
                 })
             
             # Batch upsert
@@ -183,14 +209,27 @@ class PineconeVectorStore:
             for match in results.matches:
                 match_course = match.metadata.get("course_name", "")
                 logger.debug(f"Match course: '{match_course}', score: {match.score}")
-                formatted_results.append({
+                result_dict = {
                     "content": match.metadata.get("content", ""),
-                    "page_number": match.metadata.get("page_number", 0),
                     "document_name": match.metadata.get("document_name", ""),
                     "type": match.metadata.get("type", "text"),
                     "score": match.score,
                     "course_name": match_course
-                })
+                }
+                
+                # Add page_number or timestamp based on document type
+                if match.metadata.get("page_number"):
+                    result_dict["page_number"] = match.metadata.get("page_number")
+                elif match.metadata.get("timestamp"):
+                    result_dict["timestamp"] = match.metadata.get("timestamp")
+                else:
+                    result_dict["page_number"] = None
+                
+                # Add module_name if present
+                if match.metadata.get("module_name"):
+                    result_dict["module_name"] = match.metadata.get("module_name")
+                
+                formatted_results.append(result_dict)
             
             logger.info(f"Formatted {len(formatted_results)} results for course: {normalized_course_name}")
             if formatted_results:

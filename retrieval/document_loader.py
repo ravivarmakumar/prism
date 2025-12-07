@@ -14,17 +14,19 @@ logger = logging.getLogger(__name__)
 class MultimodalPDFLoader:
     """Loads PDFs with multimodal content extraction."""
     
-    def __init__(self, course_name: str, document_path: str):
+    def __init__(self, course_name: str, document_path: str, module_name: str = None):
         """
         Initialize the PDF loader.
         
         Args:
             course_name: Name of the course (folder name)
             document_path: Path to the PDF file
+            module_name: Optional module name
         """
         self.course_name = course_name
         self.document_path = document_path
         self.document_name = Path(document_path).stem
+        self.module_name = module_name
         
         if not os.path.exists(document_path):
             raise FileNotFoundError(f"Document not found: {document_path}")
@@ -56,6 +58,7 @@ class MultimodalPDFLoader:
                                 "page_number": page_num,
                                 "type": "table",
                                 "course_name": self.course_name,
+                                "module_name": self.module_name,
                                 "document_name": self.document_name,
                                 "table_index": table_idx + 1
                             })
@@ -108,6 +111,7 @@ class MultimodalPDFLoader:
                     "page_number": page_num,
                     "type": "table",
                     "course_name": self.course_name,
+                    "module_name": self.module_name,
                     "document_name": self.document_name,
                     "table_numbers": list(found_tables)
                 })
@@ -129,6 +133,7 @@ class MultimodalPDFLoader:
                             "page_number": page_num,
                             "type": "text",  # Keep as text - contains all references
                             "course_name": self.course_name,
+                            "module_name": self.module_name,
                             "document_name": self.document_name
                         })
         except Exception as e:
@@ -191,6 +196,7 @@ class MultimodalPDFLoader:
                     "page_number": page_num,
                     "type": "figure",
                     "course_name": self.course_name,
+                    "module_name": self.module_name,
                     "document_name": self.document_name,
                     "figure_numbers": list(found_figures)
                 })
@@ -260,6 +266,7 @@ class MultimodalPDFLoader:
                         "page_number": current_page,
                         "type": "figure",
                         "course_name": self.course_name,
+                        "module_name": self.module_name,
                         "document_name": self.document_name
                     }
                     if hasattr(element.metadata, 'image_base64'):

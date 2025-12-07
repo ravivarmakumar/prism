@@ -57,6 +57,7 @@ NOT vague (these should pass through):
 - Questions with clear intent even if brief
 - Questions that use pronouns/references (like "the paper", "it", "they") IF the conversation history provides the referent
 - Questions that can be answered using conversation context (e.g., if history mentions "NeuroQuest paper", then "who are the authors of the paper?" is NOT vague)
+- Module-related queries (e.g., "explain module 2", "what is in module 1", "tell me about module 3") - these are clear requests for module content
 
 CRITICAL: 
 - ALWAYS check the conversation history FIRST before marking a question as vague
@@ -230,6 +231,27 @@ def query_refinement_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Fallback: If query uses common reference words and we have conversation history, be lenient
     query_lower = current_query.lower()
+    
+    # Check for module-related queries (these are always clear)
+    module_patterns = [
+        r'module\s+\d+',
+        r'module\s+[a-z]+',
+        r'explain\s+module',
+        r'what\s+is\s+in\s+module',
+        r'tell\s+me\s+about\s+module',
+        r'describe\s+module',
+        r'module\s+\d+\s+content',
+        r'module\s+\d+\s+topics'
+    ]
+    import re
+    is_module_query = any(re.search(pattern, query_lower, re.IGNORECASE) for pattern in module_patterns)
+    
+    if is_module_query:
+        logger.info(f"Query is about a module - treating as clear, not vague.")
+        result["is_vague"] = False
+        result["follow_up_questions"] = []
+    
+    # Check for reference words
     reference_words = ["the paper", "the document", "it", "they", "this", "that", "these", "those", "the authors", "the agents", "the figures", "the tables"]
     uses_reference = any(word in query_lower for word in reference_words)
     

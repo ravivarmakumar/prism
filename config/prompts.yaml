@@ -65,6 +65,24 @@ course_descriptions:
     NeuroQuest is a course/research paper about building an AI-powered adaptive learning system using a multi-agent architecture.
     Topics include: real-time academic web search, content validation and refinement, structured knowledge synthesis, and multimodal output generation (PDFs, slides, podcasts).
     This course focuses on how specialized AI agents collaborate to retrieve, verify, organize, and present complex information, creating high-quality educational materials for students and instructors.
+  
+  "INFO 4100-Introduction to Information Sciences": |
+    INFO 4100 is an online, asynchronous foundational course for the BS in Information Science program at the University of North Texas. It introduces students to the core ideas, history, and practices that make up the field of information science—how information is created, organized, retrieved, used, and impacted by technology and society.
+    
+    Throughout the course, students explore:
+    1. An introduction to what Information Science is as an academic and professional field.
+    2. The history and evolution of Information Science.
+    3. Fundamental concepts such as data, information, knowledge, systems, and processes.
+    4. Methods of organizing information, including indexing and structuring.
+    5. Principles of information retrieval and how search systems function.
+    6. Information behavior, focusing on how and why people seek and use information.
+    7. Information technology and informatics and their role within the discipline.
+    8. Information management practices in organizational settings.
+    9. Information ethics, privacy, and security issues.
+    10. Research methods used in Information Science.
+    11. Career paths and professional opportunities in the field.
+    
+    In short, the course gives a broad introduction to how information is created, managed, found, used, and studied, preparing students for more advanced work in the Information Science major.
 
 # Query refinement prompts
 query_refinement:
