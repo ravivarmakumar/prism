@@ -81,9 +81,11 @@ Adapt your explanation to be {explanation_style}. Use examples and analogies tha
 
 CRITICAL CITATION FORMAT:
 - Use INLINE citations within your response text, NOT at the end
-- Format: (Document_Name, Page X) or (Source_Name, URL)
+- Format: (Document_Name, Page X) - use the ACTUAL document name (PDF/PPT name) from the context, NOT "Source"
 - Place citations immediately after the information you're citing
 - Example: "The authors are John Doe and Jane Smith (NeuroQuest_Paper, Page 2)."
+- Use the exact document name as shown in the context (e.g., "NeuroQuest_Paper", "Course_Slides", etc.)
+- Do NOT use generic terms like "Source 1" or "Source 2" - use the actual document name
 - Do NOT create a separate citations section at the end
 - Integrate citations naturally into your response"""
             
@@ -172,7 +174,11 @@ Based on the {context_source.lower()} provided above, please provide a comprehen
 4. Explains concepts in a way they'll understand
 5. If the question asks for specific information (like counts, lists, names, agents, figures, tables), extract and provide ALL of that information from the context - be thorough and complete
 6. Review ALL sources provided to ensure you don't miss any information
-7. Uses INLINE citations in the format (Document_Name, Page X) immediately after cited information - do NOT create a separate citations section
+7. Uses INLINE citations in the format (Document_Name, Page X) immediately after cited information
+   - Use the ACTUAL document name from the context (e.g., "NeuroQuest_Paper", "Course_Slides")
+   - Do NOT use generic terms like "Source 1" - use the real document name
+   - For course content: do NOT create a separate citations section
+   - For web search: you may reference source names in your response
 
 CRITICAL INSTRUCTIONS:
 - The {context_source.lower()} above contains REAL information - USE IT to answer the question
@@ -306,20 +312,72 @@ CRITICAL INSTRUCTIONS:
                 else:
                     logger.info(f"Successfully filtered to {len(filtered_citations)} citations from {len(citations)} total")
             else:
-                # For web search or when no explicit sources, use all citations
-                # But deduplicate by URL for web search
+                # For web search, filter to only citations that are actually referenced in the response
                 if is_from_web and citations:
-                    seen_urls = set()
-                    unique_citations = []
+                    # Extract source names/URLs referenced in the response
+                    # Look for patterns like (Source_Name, URL) or mentions of source names
+                    referenced_sources = set()
+                    
+                    # Check for inline citations with URLs
+                    for ref_citation in referenced_citations:
+                        doc_name = ref_citation.get("document", "").strip()
+                        url = ref_citation.get("url", "")
+                        if doc_name:
+                            referenced_sources.add(doc_name.lower())
+                        if url:
+                            referenced_sources.add(url.lower())
+                    
+                    # Also check if source names are mentioned in the response text
+                    # Extract source names from citations
                     for citation in citations:
-                        url = citation.get('url', '')
-                        if url and url not in seen_urls:
-                            unique_citations.append(citation)
-                            seen_urls.add(url)
-                        elif not url:  # Include citations without URLs
-                            unique_citations.append(citation)
-                    filtered_citations = unique_citations
-                    logger.info(f"Deduplicated web citations: {len(filtered_citations)} unique citations (from {len(citations)} total)")
+                        source = citation.get('source', '').strip()
+                        url = citation.get('url', '').strip()
+                        if source and source.lower() in answer.lower():
+                            referenced_sources.add(source.lower())
+                        if url and url.lower() in answer.lower():
+                            referenced_sources.add(url.lower())
+                    
+                    # Filter citations to only those referenced
+                    if referenced_sources:
+                        filtered_citations = []
+                        seen_urls = set()
+                        for citation in citations:
+                            source = citation.get('source', '').strip()
+                            url = citation.get('url', '').strip()
+                            
+                            # Check if this citation is referenced
+                            is_referenced = False
+                            if source and source.lower() in referenced_sources:
+                                is_referenced = True
+                            if url and (url.lower() in referenced_sources or url in answer):
+                                is_referenced = True
+                            
+                            if is_referenced:
+                                # Deduplicate by URL
+                                if url and url not in seen_urls:
+                                    filtered_citations.append(citation)
+                                    seen_urls.add(url)
+                                elif not url:  # Include citations without URLs
+                                    filtered_citations.append(citation)
+                        
+                        logger.info(f"Filtered web citations: {len(referenced_sources)} sources referenced, {len(filtered_citations)} matching citations (from {len(citations)} total)")
+                    else:
+                        # No sources explicitly referenced, but check if URLs are mentioned
+                        filtered_citations = []
+                        seen_urls = set()
+                        for citation in citations:
+                            url = citation.get('url', '').strip()
+                            if url and url in answer:
+                                if url not in seen_urls:
+                                    filtered_citations.append(citation)
+                                    seen_urls.add(url)
+                        
+                        if not filtered_citations:
+                            # Fallback: use top 3 citations if none are explicitly referenced
+                            logger.info("No explicit source references found in response. Using top 3 citations.")
+                            filtered_citations = citations[:3]
+                        else:
+                            logger.info(f"Found {len(filtered_citations)} citations with URLs mentioned in response")
                 elif not is_from_web and not referenced_citations and citations and retrieved_chunks:
                     # No sources referenced in response - use only top citations by score
                     # Limit to top 3-5 citations to avoid showing too many
