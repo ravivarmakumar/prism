@@ -66,13 +66,18 @@ def generate_response(user_query):
             return f"Hello! I'm PRISM, your adaptive learning assistant for {course_name}. How can I help you with your course today?"
         
         # Get conversation history for context
+        # Exclude the last message (current query) since it's passed separately as 'query'
         conversation_history = None
-        if 'chat_history' in st.session_state:
-            conversation_history = [
+        if 'chat_history' in st.session_state and len(st.session_state.chat_history) > 0:
+            # Get all messages except the last one (which is the current query we just added)
+            history_messages = [
                 {"role": msg["role"], "content": msg["content"]}
-                for msg in st.session_state.chat_history
+                for msg in st.session_state.chat_history[:-1]  # Exclude last message (current query)
                 if msg["role"] in ["user", "assistant"] and msg.get("content")  # Filter out None content
             ]
+            # Only set conversation_history if we have messages (not just the current one)
+            if history_messages:
+                conversation_history = history_messages
         
         # Generate thread ID from session (for memory)
         thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"

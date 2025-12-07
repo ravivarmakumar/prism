@@ -217,4 +217,3 @@ class PRISMAgent:
             conversation_history=None,  # Will use thread memory
             thread_id=thread_id
         )
-
