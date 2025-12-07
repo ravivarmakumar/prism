@@ -430,20 +430,36 @@ CRITICAL INSTRUCTIONS:
                     filtered_citations = unique_citations
                     logger.info(f"Limited to top {len(filtered_citations)} citations (from {len(citations)} total) when no sources referenced")
             
-            # For web search, add citations section with clickable links
-            # For course content, citations are inline only
-            if is_from_web and filtered_citations:
-                citations_text = "\n\n**Sources:**\n"
-                for i, citation in enumerate(filtered_citations, 1):
-                    url = citation.get('url', '')
-                    source = citation.get('source', citation.get('document', 'Unknown'))
-                    if url:
-                        citations_text += f"{i}. [{source}]({url})\n"
-                    else:
-                        citations_text += f"{i}. {source}\n"
-                final_response = answer + citations_text
+            # For web search, ALWAYS add citations section with clickable links
+            # For course content, citations are inline only (no separate section)
+            if is_from_web:
+                if filtered_citations:
+                    citations_text = "\n\n**Sources:**\n"
+                    for i, citation in enumerate(filtered_citations, 1):
+                        url = citation.get('url', '')
+                        source = citation.get('source', citation.get('document', 'Unknown'))
+                        if url:
+                            citations_text += f"{i}. [{source}]({url})\n"
+                        else:
+                            citations_text += f"{i}. {source}\n"
+                    final_response = answer + citations_text
+                elif citations:
+                    # Fallback: if filtered_citations is empty but we have citations, use all
+                    logger.warning("No filtered citations but citations exist. Using all citations for Sources section.")
+                    citations_text = "\n\n**Sources:**\n"
+                    for i, citation in enumerate(citations[:5], 1):  # Limit to top 5
+                        url = citation.get('url', '')
+                        source = citation.get('source', citation.get('document', 'Unknown'))
+                        if url:
+                            citations_text += f"{i}. [{source}]({url})\n"
+                        else:
+                            citations_text += f"{i}. {source}\n"
+                    final_response = answer + citations_text
+                else:
+                    # No citations at all
+                    final_response = answer
             else:
-                # For course content, citations are inline only
+                # For course content, citations are inline only (no separate section)
                 final_response = answer
             
             return {
