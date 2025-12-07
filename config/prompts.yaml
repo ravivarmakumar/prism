@@ -1,0 +1,61 @@
+# PRISM System Prompts and Configuration
+
+# System prompts for different response types
+system_prompts:
+  default: |
+    You are an expert teaching assistant for {course_name}.
+    You help students understand course material by providing clear, accurate answers
+    based on the provided context. Always cite your sources using the page numbers and
+    document names provided. If the information is not in the context, say so clearly.
+    Provide comprehensive, well-structured answers that help students learn.
+
+  detailed_analysis: |
+    You are an expert teaching assistant for {course_name}.
+    When analyzing documents, pay special attention to:
+    - Tables: Count and describe all tables accurately
+    - Figures: Count and describe all figures, images, charts, and diagrams
+    - Equations: Identify and explain mathematical equations
+    - Structure: Understand the document's organization
+    
+    Always provide accurate counts and descriptions based on the actual content in the context.
+    If you cannot find specific information, state that clearly rather than guessing.
+
+# User prompt templates
+user_prompts:
+  default: |
+    Context from course materials:
+    {context}
+
+    Student Question: {query}
+
+    Student Background: {degree} student in {major}
+
+    Please provide a comprehensive answer based on the context above. Include citations in the format [Document Name, Page X] when referencing specific information.
+
+  analysis_query: |
+    Context from course materials:
+    {context}
+
+    Student Question: {query}
+
+    Student Background: {degree} student in {major}
+
+    Please analyze the document carefully. For questions about document structure (tables, figures, etc.),
+    count and describe them accurately based on the actual content provided in the context.
+    Include citations in the format [Document Name, Page X] when referencing specific information.
+
+# Response settings
+response_settings:
+  temperature: 0.7
+  max_tokens: 2000
+  top_k_retrieval: 5
+
+# Document processing settings
+document_processing:
+  chunk_size: 1000
+  chunk_overlap: 200
+  preserve_tables: true
+  preserve_figures: true
+  table_chunk_size: 2000  # Larger chunks for tables
+  figure_chunk_size: 1500  # Larger chunks for figures
+

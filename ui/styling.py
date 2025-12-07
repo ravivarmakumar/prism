@@ -75,13 +75,10 @@ def set_streamlit_config():
             border-radius: 6px;
         }
         
-        /* Chat history container background */
+        /* Chat history container background - removed min-height to fix white box */
         .chat-container {
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            padding: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            min-height: 500px;
+            border: none;
+            padding: 0;
         }
         
         /* Footer / Copyright */

@@ -1,23 +1,85 @@
 import streamlit as st
-import time
+import logging
+from pathlib import Path
 
 # Import UI components
 from ui import styling, sidebar, chat, session
+from generation.response_generator import ResponseGenerator
 
-# Placeholder response generator - will be replaced with agentic RAG system
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize response generator (singleton pattern for Streamlit)
+@st.cache_resource
+def get_response_generator():
+    """Get or create response generator instance."""
+    try:
+        return ResponseGenerator()
+    except Exception as e:
+        logger.error(f"Error initializing response generator: {e}")
+        return None
+
+
+def get_available_courses():
+    """Get list of available courses from courses directory."""
+    from config.settings import COURSES_PATH
+    
+    courses_dir = Path(COURSES_PATH)
+    if not courses_dir.exists():
+        return ["Select Course..."]
+    
+    courses = ["Select Course..."]
+    for course_folder in courses_dir.iterdir():
+        if course_folder.is_dir():
+            # Use folder name as course name
+            courses.append(course_folder.name)
+    
+    return courses if len(courses) > 1 else ["Select Course...", "Neuroquest"]
+
+
 def generate_response(user_query):
     """
-    Placeholder function for generating responses.
-    This will be replaced with the actual agentic RAG system.
+    Generate response using RAG system.
+    
+    Args:
+        user_query: User's question
+        
+    Returns:
+        Formatted response with citations
     """
-    time.sleep(1)  # Simulate processing time
-    
-    # Placeholder response - will be replaced with actual agentic RAG
-    response = f"Thank you for your question: '{user_query}'. The agentic RAG system will process this query based on your course materials and context."
-    response += f"\n\n**Your Context:** {st.session_state.user_context['course']} | {st.session_state.user_context['degree']} | {st.session_state.user_context['major']}"
-    response += "\n\n*(This is a placeholder. The full agentic RAG system will be integrated next.)*"
-    
-    return response
+    try:
+        generator = get_response_generator()
+        if generator is None:
+            return "Error: Response generator not available. Please check your configuration."
+        
+        course_name = st.session_state.user_context.get('course')
+        user_context = st.session_state.user_context
+        
+        if not course_name or course_name == "Select Course...":
+            return "Please select a course to ask questions."
+        
+        # Generate response
+        result = generator.generate_response(
+            query=user_query,
+            course_name=course_name,
+            user_context=user_context
+        )
+        
+        # Format response with citations
+        response = result["response"]
+        
+        if result["citations"]:
+            citations_text = "\n\n**Citations:**\n"
+            for citation in result["citations"]:
+                citations_text += f"- {citation['document']}, Page {citation['page']}\n"
+            response += citations_text
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating response: {e}")
+        return f"I encountered an error while processing your question. Please try again. Error: {str(e)}"
 
 
 # --- Main Application Layout ---
@@ -28,14 +90,8 @@ def main():
     # Initialize session state
     session.initialize_session_state()
     
-    # Define mock data for dropdowns
-    COURSE_OPTIONS = [
-        "Select Course...",
-        "CSCE 5310: Database Systems",
-        "CSCE 5320: Software Engineering",
-        "CSCE 5410: Artificial Intelligence",
-        "CSCE 5520: Machine Learning"
-    ]
+    # Get available courses from courses directory
+    COURSE_OPTIONS = get_available_courses()
     
     DEGREE_OPTIONS = [
         "Select Degree...",

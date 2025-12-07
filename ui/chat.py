@@ -1,7 +1,6 @@
 """Chat UI components for PRISM."""
 
 import streamlit as st
-import time
 
 
 def display_chat_history():
@@ -59,9 +58,7 @@ def render_chat_interface(generate_response):
     
     with col2:
         st.subheader("Adaptive Chat Interaction")
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         display_chat_history()
-        st.markdown('</div>', unsafe_allow_html=True)
         
         if st.session_state.user_context['is_ready']:
             user_input = st.chat_input(
