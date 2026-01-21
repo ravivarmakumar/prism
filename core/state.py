@@ -41,6 +41,11 @@ class AgentState(TypedDict):
     # Final response
     final_response: Optional[str]
     response_citations: List[Dict[str, Any]]
+    
+    # Evaluation fields
+    evaluation_scores: Optional[Dict[str, float]]
+    evaluation_passed: bool
+    refinement_attempts: int
 
 
 def create_initial_state(
@@ -87,6 +92,9 @@ def create_initial_state(
         next_node=None,
         should_continue=True,
         final_response=None,
-        response_citations=[]
+        response_citations=[],
+        evaluation_scores=None,
+        evaluation_passed=False,
+        refinement_attempts=0
     )
 

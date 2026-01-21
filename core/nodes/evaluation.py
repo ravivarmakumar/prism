@@ -1,0 +1,554 @@
+"""Evaluation Agent - Mathematically evaluates response quality."""
+
+import logging
+import numpy as np
+import re
+import textstat
+from typing import Dict, Any, List, Optional
+from sklearn.metrics.pairwise import cosine_similarity
+from nltk.tokenize import sent_tokenize
+import nltk
+
+# Download required NLTK data
+# NLTK 3.8+ uses punkt_tab, older versions use punkt
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    try:
+        nltk.download('punkt_tab', quiet=True)
+    except:
+        # Fallback for older NLTK versions
+        try:
+            nltk.data.find('tokenizers/punkt')
+        except LookupError:
+            nltk.download('punkt', quiet=True)
+
+from retrieval.vector_store import PineconeVectorStore
+from config.settings import OPENAI_API_KEY
+
+logger = logging.getLogger(__name__)
+
+
+class EvaluationAgent:
+    """Agent that evaluates response quality using mathematical formulas."""
+    
+    def __init__(self):
+        """Initialize the evaluation agent."""
+        self.vector_store = PineconeVectorStore()
+        self.openai_client = None
+        try:
+            from openai import OpenAI
+            self.openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {e}")
+    
+    def _embed_one(self, text: str) -> np.ndarray:
+        """Create embedding for a single text."""
+        if not text or not text.strip():
+            # Return zero vector if empty
+            try:
+                dummy_emb = self.vector_store.create_embeddings(["dummy"])
+                return np.zeros(len(dummy_emb[0]))
+            except:
+                return np.zeros(3072)  # Default dimension
+        
+        try:
+            embeddings = self.vector_store.create_embeddings([text])
+            return np.array(embeddings[0])
+        except Exception as e:
+            logger.error(f"Error creating embedding: {e}")
+            # Return zero vector on error
+            return np.zeros(3072)  # Default dimension
+    
+    def _normalize(self, x: float, a: float, b: float) -> float:
+        """Normalize value x to [0, 1] range between a and b."""
+        if b == a:
+            return 0.0
+        return np.clip((x - a) / (b - a + 1e-9), 0.0, 1.0)
+    
+    def _inv_normalize(self, x: float, a: float, b: float) -> float:
+        """Inverse normalize (higher is better)."""
+        return 1.0 - self._normalize(x, a, b)
+    
+    def _weighted_sum(self, values: List[float], weights: List[float]) -> float:
+        """Calculate weighted sum."""
+        if len(values) != len(weights):
+            logger.warning(f"Values and weights length mismatch: {len(values)} vs {len(weights)}")
+            # Normalize weights if mismatch
+            weights = weights[:len(values)]
+            if weights:
+                total = sum(weights)
+                if total > 0:
+                    weights = [w / total for w in weights]
+        
+        return sum(a * b for a, b in zip(values, weights))
+    
+    def readability_complexity(
+        self, 
+        text: str, 
+        degree_level: str
+    ) -> float:
+        """
+        Calculate readability match for degree level.
+        
+        Args:
+            text: Answer text
+            degree_level: User's degree level (e.g., "Bachelors", "Masters", "PhD")
+            
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        if not text or not text.strip():
+            return 0.0
+        
+        try:
+            # Calculate Flesch-Kincaid grade level
+            fk_grade = textstat.flesch_kincaid_grade(text)
+            
+            # Define target grade bands based on degree level
+            if "PhD" in degree_level or "Doctor" in degree_level:
+                target_band = (14, 18)  # Graduate level
+            elif "Master" in degree_level:
+                target_band = (12, 16)  # Graduate level
+            else:
+                target_band = (10, 14)  # Undergraduate level
+            
+            # Calculate match using Gaussian-like function
+            mu = (target_band[0] + target_band[1]) / 2.0
+            sigma_sq = ((target_band[1] - target_band[0]) / 2.0) ** 2 + 1e-9
+            
+            # Gaussian probability density (normalized)
+            match_score = np.exp(-((fk_grade - mu) ** 2) / (2 * sigma_sq))
+            
+            return float(np.clip(match_score, 0.0, 1.0))
+        except Exception as e:
+            logger.error(f"Error calculating readability: {e}")
+            return 0.5  # Default middle score
+    
+    def coherence_fluency(
+        self, 
+        sentence_embeddings: List[np.ndarray],
+        perplexity: float = 40.0
+    ) -> float:
+        """
+        Calculate coherence and fluency score.
+        
+        Args:
+            sentence_embeddings: List of sentence embeddings
+            perplexity: Estimated perplexity (default 40, can be improved later)
+            
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        if len(sentence_embeddings) < 2:
+            return 0.0
+        
+        try:
+            # Local coherence: average cosine similarity between adjacent sentences
+            local_coherences = []
+            for i in range(len(sentence_embeddings) - 1):
+                sim = cosine_similarity(
+                    sentence_embeddings[i].reshape(1, -1),
+                    sentence_embeddings[i + 1].reshape(1, -1)
+                )[0][0]
+                local_coherences.append(sim)
+            
+            local_coherence = np.mean(local_coherences) if local_coherences else 0.0
+            
+            # Perplexity component (inverse normalized: lower perplexity = better)
+            # Normalize perplexity between 10 (excellent) and 150 (poor)
+            perplexity_score = self._inv_normalize(perplexity, 10.0, 150.0)
+            
+            # Weighted combination
+            return self._weighted_sum([perplexity_score, local_coherence], [0.5, 0.5])
+        except Exception as e:
+            logger.error(f"Error calculating coherence: {e}")
+            return 0.5
+    
+    def relevance_score(
+        self,
+        query_embedding: np.ndarray,
+        answer_embedding: np.ndarray,
+        context_embeddings: List[np.ndarray]
+    ) -> float:
+        """
+        Calculate relevance score.
+        
+        Args:
+            query_embedding: Query vector
+            answer_embedding: Answer vector
+            context_embeddings: List of context chunk vectors
+            
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        try:
+            # Query-Answer similarity
+            qa_similarity = cosine_similarity(
+                query_embedding.reshape(1, -1),
+                answer_embedding.reshape(1, -1)
+            )[0][0]
+            
+            # Answer-Context similarity (average)
+            if context_embeddings:
+                ac_similarities = []
+                for ctx_emb in context_embeddings:
+                    sim = cosine_similarity(
+                        answer_embedding.reshape(1, -1),
+                        ctx_emb.reshape(1, -1)
+                    )[0][0]
+                    ac_similarities.append(sim)
+                ac_similarity = np.mean(ac_similarities)
+            else:
+                ac_similarity = 0.0
+            
+            # Weighted combination
+            return self._weighted_sum([qa_similarity, ac_similarity], [0.5, 0.5])
+        except Exception as e:
+            logger.error(f"Error calculating relevance: {e}")
+            return 0.5
+    
+    def coverage(self, answer: str, query: str) -> float:
+        """
+        Calculate coverage score (how many query aspects are covered).
+        
+        Args:
+            answer: Generated answer
+            query: Original query
+            
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        if not answer or not query:
+            return 0.0
+        
+        try:
+            # Split query into sub-questions/aspects
+            # Split by common separators and conjunctions
+            sub_parts = re.split(r"[;,.]|\band\b|\bor\b", query.lower())
+            sub_parts = [s.strip() for s in sub_parts if s.strip() and len(s.strip()) > 2]
+            
+            if not sub_parts:
+                # If no clear sub-parts, check if main query is addressed
+                query_words = set(query.lower().split())
+                answer_words = set(answer.lower().split())
+                overlap = len(query_words.intersection(answer_words))
+                return min(overlap / max(len(query_words), 1), 1.0)
+            
+            # Count how many sub-parts are found in answer
+            found_count = 0
+            answer_lower = answer.lower()
+            
+            for part in sub_parts:
+                # Check if key terms from this part appear in answer
+                part_words = [w for w in part.split() if len(w) > 2]
+                if part_words:
+                    # If at least one significant word appears, consider it covered
+                    if any(word in answer_lower for word in part_words):
+                        found_count += 1
+            
+            return found_count / max(len(sub_parts), 1)
+        except Exception as e:
+            logger.error(f"Error calculating coverage: {e}")
+            return 0.5
+    
+    def source_credibility(self, sources: List[Dict[str, Any]]) -> float:
+        """
+        Calculate source credibility score.
+        
+        Args:
+            sources: List of source metadata dicts with keys:
+                - venue: Publication venue (0-1 score)
+                - author: Author reputation (0-1 score)
+                - recency: How recent (0-1 score, 1.0 = very recent)
+                - citation: Citation count normalized (0-1 score)
+                - integrity: Source integrity score (0-1)
+                
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        if not sources:
+            return 0.0
+        
+        try:
+            credibility_scores = []
+            for source in sources:
+                # Extract scores (default to 0.5 if not provided)
+                venue = source.get("venue", 0.5)
+                author = source.get("author", 0.5)
+                recency = source.get("recency", 0.5)
+                citation = source.get("citation", 0.5)
+                integrity = source.get("integrity", 0.5)
+                
+                # Weighted average
+                score = self._weighted_sum(
+                    [venue, author, recency, citation, integrity],
+                    [0.2, 0.2, 0.2, 0.2, 0.2]
+                )
+                credibility_scores.append(score)
+            
+            return np.mean(credibility_scores) if credibility_scores else 0.0
+        except Exception as e:
+            logger.error(f"Error calculating credibility: {e}")
+            return 0.5
+    
+    def consensus_score(self, entailment_scores: List[List[float]]) -> float:
+        """
+        Calculate consensus score from entailment matrix.
+        
+        Args:
+            entailment_scores: 2D list where each row is a claim and each column is a source
+                Values should be in [-1, 1] range (-1 = contradiction, 0 = neutral, 1 = entailment)
+                
+        Returns:
+            Score between 0.0 and 1.0
+        """
+        if not entailment_scores or not entailment_scores[0]:
+            return 0.0
+        
+        try:
+            arr = np.array(entailment_scores, dtype=float)
+            
+            # Average across sources for each claim
+            claim_avg = np.mean(arr, axis=1)
+            
+            # Normalize from [-1, 1] to [0, 1]
+            normalized = (claim_avg + 1.0) / 2.0
+            
+            # Overall consensus is the mean
+            return float(np.mean(normalized))
+        except Exception as e:
+            logger.error(f"Error calculating consensus: {e}")
+            return 0.5
+    
+    def logical_consistency(self, contradiction_rate: float) -> float:
+        """
+        Calculate logical consistency score.
+        
+        Args:
+            contradiction_rate: Rate of contradictions found (0.0 = none, 1.0 = all contradictory)
+            
+        Returns:
+            Score between 0.0 and 1.0 (1.0 = no contradictions)
+        """
+        return 1.0 - np.clip(contradiction_rate, 0.0, 1.0)
+    
+    def evaluate_course_response(
+        self,
+        query: str,
+        answer: str,
+        retrieved_chunks: List[Dict[str, Any]],
+        degree_level: str
+    ) -> Dict[str, float]:
+        """
+        Evaluate response for course-based answers.
+        
+        Args:
+            query: User's question
+            answer: Generated answer
+            retrieved_chunks: Retrieved context chunks
+            degree_level: User's degree level
+            
+        Returns:
+            Dictionary with scores: relevance, readability, coherence, coverage, overall
+        """
+        try:
+            # Create embeddings
+            query_emb = self._embed_one(query)
+            answer_emb = self._embed_one(answer)
+            
+            # Get context embeddings (top 3 chunks)
+            context_embeddings = []
+            for chunk in retrieved_chunks[:3]:
+                content = chunk.get("content", "")
+                if content:
+                    ctx_emb = self._embed_one(content)
+                    context_embeddings.append(ctx_emb)
+            
+            # Calculate metrics
+            relevance = self.relevance_score(query_emb, answer_emb, context_embeddings)
+            readability = self.readability_complexity(answer, degree_level)
+            
+            # Coherence: tokenize sentences and embed
+            sentences = sent_tokenize(answer)
+            sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            coherence = self.coherence_fluency(sentence_embeddings)
+            
+            coverage = self.coverage(answer, query)
+            
+            # Calculate overall (weighted)
+            overall = self._weighted_sum(
+                [relevance, readability, coherence, coverage],
+                [0.3, 0.25, 0.2, 0.25]
+            )
+            
+            return {
+                "relevance": float(relevance),
+                "readability": float(readability),
+                "coherence": float(coherence),
+                "coverage": float(coverage),
+                "overall": float(overall)
+            }
+        except Exception as e:
+            logger.error(f"Error evaluating course response: {e}", exc_info=True)
+            # Return default scores on error
+            return {
+                "relevance": 0.5,
+                "readability": 0.5,
+                "coherence": 0.5,
+                "coverage": 0.5,
+                "overall": 0.5
+            }
+    
+    def evaluate_web_response(
+        self,
+        query: str,
+        answer: str,
+        web_sources: List[Dict[str, Any]],
+        degree_level: str
+    ) -> Dict[str, float]:
+        """
+        Evaluate response for web-based answers.
+        
+        Args:
+            query: User's question
+            answer: Generated answer
+            web_sources: Web search sources with metadata
+            degree_level: User's degree level
+            
+        Returns:
+            Dictionary with all scores including credibility, consensus, consistency
+        """
+        try:
+            # Base metrics (same as course)
+            query_emb = self._embed_one(query)
+            answer_emb = self._embed_one(answer)
+            
+            # For web, we don't have retrieved chunks, so use answer itself as context
+            context_embeddings = [answer_emb]
+            
+            relevance = self.relevance_score(query_emb, answer_emb, context_embeddings)
+            readability = self.readability_complexity(answer, degree_level)
+            
+            sentences = sent_tokenize(answer)
+            sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            coherence = self.coherence_fluency(sentence_embeddings)
+            coverage = self.coverage(answer, query)
+            
+            # Web-specific metrics
+            # Extract source metadata (simplified - you may need to enhance this)
+            source_metadata = []
+            for source in web_sources:
+                # Default values - you can enhance this by analyzing source URLs/domains
+                source_metadata.append({
+                    "venue": 0.6,  # Default moderate credibility
+                    "author": 0.5,
+                    "recency": 0.7,  # Web sources are usually recent
+                    "citation": 0.5,
+                    "integrity": 0.6
+                })
+            
+            credibility = self.source_credibility(source_metadata)
+            
+            # Consensus: simplified - assume moderate consensus for web sources
+            # In a full implementation, you'd use an entailment model
+            # For now, use a default value based on number of sources
+            if len(web_sources) >= 3:
+                consensus = 0.7  # Multiple sources = likely consensus
+            elif len(web_sources) >= 1:
+                consensus = 0.5  # Single source = unknown
+            else:
+                consensus = 0.3  # No sources = low consensus
+            
+            # Logical consistency: simplified - assume no contradictions detected
+            # In full implementation, use contradiction detection model
+            consistency = 0.8  # Default: assume mostly consistent
+            
+            # Calculate overall (weighted)
+            overall = self._weighted_sum(
+                [relevance, readability, coherence, coverage, 
+                 credibility, consensus, consistency],
+                [0.2, 0.15, 0.15, 0.15, 0.15, 0.1, 0.1]
+            )
+            
+            return {
+                "relevance": float(relevance),
+                "readability": float(readability),
+                "coherence": float(coherence),
+                "coverage": float(coverage),
+                "credibility": float(credibility),
+                "consensus": float(consensus),
+                "consistency": float(consistency),
+                "overall": float(overall)
+            }
+        except Exception as e:
+            logger.error(f"Error evaluating web response: {e}", exc_info=True)
+            return {
+                "relevance": 0.5,
+                "readability": 0.5,
+                "coherence": 0.5,
+                "coverage": 0.5,
+                "credibility": 0.5,
+                "consensus": 0.5,
+                "consistency": 0.5,
+                "overall": 0.5
+            }
+
+
+def evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    LangGraph node for evaluation.
+    
+    Args:
+        state: Current agent state
+        
+    Returns:
+        Updated state with evaluation scores
+    """
+    agent = EvaluationAgent()
+    
+    query = state.get("refined_query", state["query"])
+    answer = state.get("final_response", "")
+    course_content_found = state.get("course_content_found", False)
+    user_context = state.get("user_context", {})
+    degree_level = user_context.get("degree", "Bachelors")
+    
+    if not answer:
+        logger.warning("No answer to evaluate")
+        state["evaluation_scores"] = {"overall": 0.0}
+        state["evaluation_passed"] = False
+        return state
+    
+    # Evaluate based on source type
+    if course_content_found:
+        retrieved_chunks = state.get("retrieved_chunks", [])
+        if not retrieved_chunks:
+            # Fallback: try to get from course_context if available
+            retrieved_chunks = []
+        scores = agent.evaluate_course_response(
+            query=query,
+            answer=answer,
+            retrieved_chunks=retrieved_chunks,
+            degree_level=degree_level
+        )
+    else:
+        web_sources = state.get("web_search_citations", [])
+        scores = agent.evaluate_web_response(
+            query=query,
+            answer=answer,
+            web_sources=web_sources,
+            degree_level=degree_level
+        )
+    
+    # Check if passes threshold
+    threshold = 0.70
+    passed = scores["overall"] >= threshold
+    
+    state["evaluation_scores"] = scores
+    state["evaluation_passed"] = passed
+    state["refinement_attempts"] = state.get("refinement_attempts", 0)
+    
+    logger.info(f"Evaluation complete. Overall score: {scores['overall']:.3f}, Passed: {passed}")
+    logger.debug(f"Detailed scores: {scores}")
+    
+    return state

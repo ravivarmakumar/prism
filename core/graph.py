@@ -10,6 +10,8 @@ from core.nodes.relevance import relevance_node
 from core.nodes.course_rag import course_rag_node
 from core.nodes.web_search import web_search_node
 from core.nodes.personalization import personalization_node
+from core.nodes.evaluation import evaluation_node
+from core.nodes.refinement import refinement_node
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,23 @@ def route_after_course_rag(state: AgentState) -> Literal["personalization", "web
         return "web_search"
 
 
+def route_after_evaluation(state: AgentState) -> Literal["refinement", "end"]:
+    """Route after evaluation - check if refinement needed."""
+    passed = state.get("evaluation_passed", False)
+    attempts = state.get("refinement_attempts", 0)
+    
+    if passed:
+        return "end"
+    elif attempts < 3:
+        return "refinement"
+    else:
+        # Max attempts reached, add disclaimer and end
+        final_response = state.get("final_response", "")
+        disclaimer = "Note: I could not fully meet the quality threshold in 3 attempts, but here is the best answer I can provide based on the available evidence.\n\n"
+        state["final_response"] = disclaimer + final_response
+        return "end"
+
+
 def create_agent_graph():
     """Create and compile the LangGraph agent flow."""
     
@@ -54,6 +73,8 @@ def create_agent_graph():
     workflow.add_node("course_rag", course_rag_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("personalization", personalization_node)
+    workflow.add_node("evaluation", evaluation_node)
+    workflow.add_node("refinement", refinement_node)
     
     # Set entry point
     workflow.set_entry_point("query_refinement")
@@ -89,8 +110,21 @@ def create_agent_graph():
     # Web search always goes to personalization
     workflow.add_edge("web_search", "personalization")
     
-    # Personalization is the end
-    workflow.add_edge("personalization", END)
+    # Personalization goes to evaluation
+    workflow.add_edge("personalization", "evaluation")
+    
+    # Evaluation routes to refinement or end
+    workflow.add_conditional_edges(
+        "evaluation",
+        route_after_evaluation,
+        {
+            "refinement": "refinement",
+            "end": END
+        }
+    )
+    
+    # Refinement loops back to evaluation
+    workflow.add_edge("refinement", "evaluation")
     
     # Compile with memory
     checkpointer = MemorySaver()
