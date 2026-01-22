@@ -1,6 +1,7 @@
 """Chat UI components for PRISM."""
 
 import hashlib
+import os
 import streamlit as st
 
 
@@ -8,15 +9,15 @@ def display_flashcards(flashcards):
     """Display flashcards in an interactive format."""
     if not flashcards:
         return
-    
+
     st.markdown("### 📚 Flashcards")
-    
+
     for i, card in enumerate(flashcards, 1):
         with st.expander(f"Card {i}: {card['question'][:60]}...", expanded=False):
             st.markdown(f"**Q:** {card['question']}")
             st.markdown("---")
             st.markdown(f"**A:** {card['answer']}")
-            
+
             # Show source if available
             if card.get('source'):
                 source = card['source']
@@ -28,8 +29,34 @@ def display_flashcards(flashcards):
                     source_parts.append(f"Page {source['page']}")
                 elif source.get('timestamp'):
                     source_parts.append(f"Timestamp: {source['timestamp']}")
-                
+
                 st.caption(f"Source: {', '.join(source_parts)}")
+
+
+def display_podcast_player(podcast_data):
+    """Display podcast audio player with controls."""
+    if not podcast_data or not podcast_data.get('audio_path'):
+        return
+
+    st.markdown("### 🎙️ Podcast")
+
+    audio_path = podcast_data['audio_path']
+
+    # Check if file exists
+    if os.path.exists(audio_path):
+        # Read audio file
+        with open(audio_path, 'rb') as audio_file:
+            audio_bytes = audio_file.read()
+
+        # Display audio player with controls
+        st.audio(audio_bytes, format='audio/mp3', start_time=0)
+
+        # Show transcript/script in expander if available
+        if podcast_data.get('script'):
+            with st.expander("📄 View Transcript", expanded=False):
+                st.text(podcast_data['script'])
+    else:
+        st.error("Audio file not found. Please regenerate the podcast.")
 
 
 def display_chat_history():
@@ -38,7 +65,8 @@ def display_chat_history():
         role = message["role"]
         content = message["content"]
         flashcards = message.get("flashcards", [])  # Get flashcards if present
-        
+        podcast = message.get("podcast")  # Get podcast if present
+
         # User messages appear on the right with person icon
         if role == "user":
             with st.chat_message("user", avatar="👤"):
@@ -51,6 +79,10 @@ def display_chat_history():
                 if flashcards:
                     st.markdown("---")
                     display_flashcards(flashcards)
+                # Display podcast player if this message has a podcast
+                if podcast:
+                    st.markdown("---")
+                    display_podcast_player(podcast)
 
 
 def handle_user_input(user_query, generate_response):
@@ -143,22 +175,22 @@ def handle_user_input(user_query, generate_response):
 def handle_flashcard_generation(topic: str):
     """Handle flashcard generation request."""
     from core.flashcard_generator import FlashcardGenerator
-    
+
     # Store topic
     st.session_state.flashcard_topic = topic
-    
+
     # Get all existing flashcards from chat history to avoid duplicates
     all_existing_flashcards = []
     for msg in st.session_state.chat_history:
         if msg.get("role") == "assistant" and msg.get("flashcards"):
             all_existing_flashcards.extend(msg.get("flashcards", []))
-    
+
     # Add user message to chat
     st.session_state.chat_history.append({
-        "role": "user", 
+        "role": "user",
         "content": f"Generate flashcards for: {topic}"
     })
-    
+
     # Generate flashcards
     with st.chat_message("assistant", avatar="🧠"):
         with st.spinner("Generating flashcards..."):
@@ -169,7 +201,7 @@ def handle_flashcard_generation(topic: str):
                 existing_flashcards=all_existing_flashcards,
                 num_flashcards=5
             )
-            
+
             if result['flashcards']:
                 # Show response
                 response = f"Generated {len(result['flashcards'])} flashcards for '{topic}'! 📚"
@@ -177,9 +209,9 @@ def handle_flashcard_generation(topic: str):
                     response += " Click 'Generate 5 More' to get additional flashcards."
                 else:
                     response += " " + (result.get('message', '') or '')
-                
+
                 st.markdown(response)
-                
+
                 # Store assistant response with flashcards attached (will be displayed by display_chat_history)
                 st.session_state.chat_history.append({
                     "role": "assistant",
@@ -194,7 +226,62 @@ def handle_flashcard_generation(topic: str):
                     "role": "assistant",
                     "content": error_msg
                 })
-    
+
+    st.rerun()
+
+
+def handle_podcast_generation(topic: str, style: str = "conversational"):
+    """Handle podcast generation request."""
+    from core.podcast_generator import run_async_podcast_generation
+    import uuid
+
+    # Store topic
+    st.session_state.podcast_topic = topic
+
+    # Add user message to chat
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": f"Generate podcast for: {topic}"
+    })
+
+    # Generate podcast
+    with st.chat_message("assistant", avatar="🧠"):
+        with st.spinner("Generating podcast... This may take a minute."):
+            # Generate unique session ID for this podcast
+            session_id = str(uuid.uuid4())[:8]
+
+            # Run podcast generation
+            result = run_async_podcast_generation(
+                topic=topic,
+                course_name=st.session_state.user_context.get('course'),
+                session_id=session_id,
+                style=st.session_state.get('podcast_style', 'conversational')
+            )
+
+            if result['success'] and result['audio_path']:
+                # Show response
+                response = f"Generated podcast for '{topic}'! 🎙️"
+                st.markdown(response)
+
+                # Store assistant response with podcast attached
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": response,
+                    "podcast": {
+                        "audio_path": result['audio_path'],
+                        "script": result.get('script'),
+                        "topic": topic
+                    }
+                })
+            else:
+                error_msg = result.get('message', 'Could not generate podcast. Please try a different topic.')
+                st.markdown(error_msg)
+                # Store assistant response without podcast
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+
     st.rerun()
 
 
@@ -263,9 +350,13 @@ def render_chat_interface(generate_response):
     
     # Chat input with flashcard toggle button inside
     if st.session_state.user_context['is_ready']:
-        # Initialize flashcard mode in session state if not exists
+        # Initialize flashcard and podcast modes in session state if not exists
         if 'flashcard_mode' not in st.session_state:
             st.session_state.flashcard_mode = False
+        if 'podcast_mode' not in st.session_state:
+            st.session_state.podcast_mode = False
+        if 'podcast_style' not in st.session_state:
+            st.session_state.podcast_style = "conversational"
         if 'show_flashcard_options' not in st.session_state:
             st.session_state.show_flashcard_options = False
         if 'is_processing_input' not in st.session_state:
@@ -282,12 +373,14 @@ def render_chat_interface(generate_response):
                 st.session_state.chat_history[-1].get("role") == "assistant"):
                 st.session_state.is_processing_input = False
         
-        # Show flashcard options popover OUTSIDE the form (only when plus was clicked)
+        # Show options popover OUTSIDE the form (only when plus was clicked)
         # This ensures it's visible and doesn't get hidden during form submission
         if st.session_state.show_flashcard_options:
             with st.container():
                 st.markdown("---")
                 st.markdown("**Options:**")
+
+                # Flashcard option
                 flashcard_mode = st.checkbox(
                     "📚 Generate Flashcards",
                     value=st.session_state.flashcard_mode,
@@ -295,7 +388,36 @@ def render_chat_interface(generate_response):
                 )
                 if flashcard_mode != st.session_state.flashcard_mode:
                     st.session_state.flashcard_mode = flashcard_mode
+                    # Disable podcast mode if flashcard is enabled
+                    if flashcard_mode:
+                        st.session_state.podcast_mode = False
                     st.rerun()
+
+                # Podcast option
+                podcast_mode = st.checkbox(
+                    "🎙️ Generate Podcast",
+                    value=st.session_state.podcast_mode,
+                    key="podcast_option_checkbox"
+                )
+                if podcast_mode != st.session_state.podcast_mode:
+                    st.session_state.podcast_mode = podcast_mode
+                    # Disable flashcard mode if podcast is enabled
+                    if podcast_mode:
+                        st.session_state.flashcard_mode = False
+                    st.rerun()
+
+                # Show podcast style selector if podcast mode is active
+                if st.session_state.podcast_mode:
+                    podcast_style = st.radio(
+                        "Podcast Style:",
+                        options=["conversational", "interview"],
+                        index=0 if st.session_state.podcast_style == "conversational" else 1,
+                        key="podcast_style_radio",
+                        horizontal=True
+                    )
+                    if podcast_style != st.session_state.podcast_style:
+                        st.session_state.podcast_style = podcast_style
+                        st.rerun()
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
@@ -315,9 +437,15 @@ def render_chat_interface(generate_response):
             with input_col2:
                 # Text input - styled to look like chat input
                 # Enter key will submit the form automatically
+                placeholder_text = "Ask your questions here..."
+                if st.session_state.flashcard_mode:
+                    placeholder_text = "Enter a topic for flashcards..."
+                elif st.session_state.podcast_mode:
+                    placeholder_text = "Enter a topic for podcast..."
+
                 user_input = st.text_input(
                     "",
-                    placeholder="Ask your questions here..." if not st.session_state.flashcard_mode else "Enter a topic for flashcards...",
+                    placeholder=placeholder_text,
                     key="custom_chat_input",
                     label_visibility="collapsed"
                 )
@@ -366,19 +494,25 @@ def render_chat_interface(generate_response):
                 if not is_duplicate:
                     # Update last input value to track form submissions
                     st.session_state.last_input_value = current_input
-                    
+
                     # Set processing flag to prevent loops (will be cleared on next render)
                     st.session_state.is_processing_input = True
-                    
+
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
-                    
+
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
+                    elif st.session_state.podcast_mode:
+                        handle_podcast_generation(
+                            current_input,
+                            style=st.session_state.podcast_style
+                        )
+                        st.session_state.podcast_mode = False
                     else:
                         handle_user_input(current_input, generate_response)
-                    
+
                     # Don't clear the flag here - let it be cleared on the next render cycle
                     # This prevents the form from processing again during the same submission
     else:

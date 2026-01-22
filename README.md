@@ -12,16 +12,31 @@ PRISM is an adaptive learning application designed for students, leveraging an a
 - **Follow-up Questions**: Handles vague queries by asking clarifying questions
 - **Response Evaluation**: Evaluates and refines responses using mathematical metrics
 - **Personalization**: Tailors responses to student's academic level and major
+- **Flashcard Generation**: Create study flashcards from course content on any topic
+- **Podcast Generation**: Generate conversational-style podcasts (NotebookLM-like) from course content
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Prerequisites
+
+For podcast generation, you need Node.js and npm installed:
+- Node.js 18+ and npm (required for podcast TTS via MCP server)
+
+Check if you have them installed:
+```bash
+node --version
+npm --version
+```
+
+If not installed, download from [nodejs.org](https://nodejs.org/)
+
+### 2. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables
+### 3. Configure Environment Variables
 
 Copy the `.env.example` file to `.env` and fill in your API keys:
 
@@ -33,7 +48,7 @@ Edit `.env` and add your:
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `TAVILY_API_KEY`: Your Tavily API key for internet search
 
-### 3. Run the Application
+### 4. Run the Application
 
 ```bash
 streamlit run app.py
@@ -63,6 +78,8 @@ PRISM Code/
 
 ## Usage
 
+### Basic Chat
+
 1. Fill out the sidebar form with:
    - Student ID
    - Degree level
@@ -72,6 +89,30 @@ PRISM Code/
 2. Click "Start PRISM Session"
 
 3. Ask questions about your course material in the chat interface
+
+### Generate Flashcards
+
+1. Click the **➕** button next to the input field
+2. Check **📚 Generate Flashcards**
+3. Enter a topic (e.g., "Machine Learning")
+4. Press Enter or click **➤**
+5. View generated flashcards with sources
+6. Click **Generate 5 More** for additional flashcards on the same topic
+
+### Generate Podcasts
+
+1. Click the **➕** button next to the input field
+2. Check **🎙️ Generate Podcast**
+3. Select style:
+   - **Conversational**: NotebookLM-style dialogue between two hosts (default)
+   - **Interview**: Interview format with host and expert
+4. Enter a topic (e.g., "Neural Networks")
+5. Press Enter or click **➤**
+6. Wait for podcast generation (may take 1-2 minutes)
+7. Use the audio player controls to play/pause/seek
+8. Click **View Transcript** to see the dialogue script
+
+**Note**: Podcasts are generated as temporary files and will be cleaned up after the session.
 
 ## Future Enhancements
 
