@@ -129,8 +129,6 @@ class PRISMAgent:
             # Extract final state - invoke returns the final state directly
             last_node_state = final_state
             
-            logger.info(f"Graph execution completed. Final state keys: {list(last_node_state.keys()) if isinstance(last_node_state, dict) else 'Not a dict'}")
-            
             # Check if we need follow-up questions
             if last_node_state.get("is_vague") and last_node_state.get("follow_up_questions"):
                 return {
