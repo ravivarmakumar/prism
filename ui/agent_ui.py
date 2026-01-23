@@ -38,91 +38,91 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
     current_node = state.get("current_node", "start")
     status_message = get_status_message(current_node, state)
     
-    # Create rounded container with border
-    container_html = """
-    <div style='
-        border: 2px solid #00853C;
-        border-radius: 12px;
-        padding: 16px;
-        margin: 12px 0;
-        background-color: #f8f9fa;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    '>
-    """
-    st.markdown(container_html, unsafe_allow_html=True)
-    
-    # Title
-    st.markdown("### 🤖 Agent Dashboard")
-    
-    # Status message (disappearing)
-    if is_processing:
-        st.info(f"**{status_message}**")
-    
-    # Metrics row (always visible)
-    st.markdown("#### 📊 Status")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        is_relevant = state.get("is_relevant", False)
-        if "is_relevant" in state:
-            st.metric("Is Relevant", "✅ Yes" if is_relevant else "❌ No")
-        else:
-            st.metric("Is Relevant", "⏳ Pending")
-    
-    with col2:
-        content_found = state.get("course_content_found", False)
-        if "course_content_found" in state:
-            st.metric("Content Found", "✅ Yes" if content_found else "❌ No")
-        else:
-            st.metric("Content Found", "⏳ Pending")
-    
-    with col3:
-        is_vague = state.get("is_vague", False)
-        if "is_vague" in state:
-            st.metric("Is Vague", "⚠️ Yes" if is_vague else "✅ No")
-        else:
-            st.metric("Is Vague", "⏳ Pending")
-    
-    # A2A Messages (disappearing, show last 5)
-    a2a_messages = state.get("a2a_messages", [])
-    if a2a_messages and is_processing:
-        st.markdown("#### 📨 Agent Communication")
-        recent_messages = a2a_messages[-5:] if len(a2a_messages) > 5 else a2a_messages
+    # Use Streamlit container for rounded border effect
+    with st.container():
+        # Add custom CSS for rounded border
+        st.markdown("""
+        <style>
+        .agent-dashboard-container {
+            border: 2px solid #00853C;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+            background-color: #f8f9fa;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        for msg in reversed(recent_messages):  # Most recent first
-            sender = msg.get("sender", "unknown")
-            receiver = msg.get("receiver", "unknown")
-            msg_type = msg.get("type", "message")
+        # Title
+        st.markdown("### 🤖 Agent Dashboard")
+        
+        # Status message (disappearing)
+        if is_processing:
+            st.info(f"**{status_message}**")
+        
+        # Metrics row (always visible)
+        st.markdown("#### 📊 Status")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            is_relevant = state.get("is_relevant", False)
+            if "is_relevant" in state:
+                st.metric("Is Relevant", "✅ Yes" if is_relevant else "❌ No")
+            else:
+                st.metric("Is Relevant", "⏳ Pending")
+        
+        with col2:
+            content_found = state.get("course_content_found", False)
+            if "course_content_found" in state:
+                st.metric("Content Found", "✅ Yes" if content_found else "❌ No")
+            else:
+                st.metric("Content Found", "⏳ Pending")
+        
+        with col3:
+            is_vague = state.get("is_vague", False)
+            if "is_vague" in state:
+                st.metric("Is Vague", "⚠️ Yes" if is_vague else "✅ No")
+            else:
+                st.metric("Is Vague", "⏳ Pending")
+        
+        # A2A Messages (disappearing, show last 5)
+        a2a_messages = state.get("a2a_messages", [])
+        if a2a_messages and is_processing:
+            st.markdown("#### 📨 Agent Communication")
+            recent_messages = a2a_messages[-5:] if len(a2a_messages) > 5 else a2a_messages
             
-            # Create human-readable message
-            readable_messages = {
-                "query_refined": f"Query refined and sent to {receiver}",
-                "query_approved": f"Query approved, sent to {receiver}",
-                "content_retrieved": f"Content found, sent to {receiver}",
-                "content_not_found": f"No content found, sent to {receiver}",
-                "web_search_completed": f"Web search completed, sent to {receiver}",
-                "response_ready": f"Response ready, sent to {receiver}",
-                "follow_up_needed": "Follow-up question needed",
-                "not_relevant": "Query not relevant to course"
-            }
-            
-            readable_msg = readable_messages.get(msg_type, f"{sender} → {receiver}: {msg_type}")
-            
-            # Format timestamp
-            timestamp = msg.get("timestamp", "")
-            time_display = ""
-            if timestamp:
-                try:
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    time_display = dt.strftime("%H:%M:%S")
-                except:
-                    time_display = timestamp[:8] if len(timestamp) > 8 else ""
-            
-            # Show message with fade effect
-            st.caption(f"🔄 {readable_msg} {time_display}")
-    
-    # Close container div
-    st.markdown("</div>", unsafe_allow_html=True)
+            for msg in reversed(recent_messages):  # Most recent first
+                sender = msg.get("sender", "unknown")
+                receiver = msg.get("receiver", "unknown")
+                msg_type = msg.get("type", "message")
+                
+                # Create human-readable message
+                readable_messages = {
+                    "query_refined": f"Query refined and sent to {receiver}",
+                    "query_approved": f"Query approved, sent to {receiver}",
+                    "content_retrieved": f"Content found, sent to {receiver}",
+                    "content_not_found": f"No content found, sent to {receiver}",
+                    "web_search_completed": f"Web search completed, sent to {receiver}",
+                    "response_ready": f"Response ready, sent to {receiver}",
+                    "follow_up_needed": "Follow-up question needed",
+                    "not_relevant": "Query not relevant to course"
+                }
+                
+                readable_msg = readable_messages.get(msg_type, f"{sender} → {receiver}: {msg_type}")
+                
+                # Format timestamp
+                timestamp = msg.get("timestamp", "")
+                time_display = ""
+                if timestamp:
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        time_display = dt.strftime("%H:%M:%S")
+                    except:
+                        time_display = timestamp[:8] if len(timestamp) > 8 else ""
+                
+                # Show message with fade effect
+                st.caption(f"🔄 {readable_msg} {time_display}")
 
 
 def render_agent_flow_simple(state: Dict[str, Any]):
