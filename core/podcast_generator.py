@@ -13,6 +13,16 @@ from retrieval.retriever import CourseRetriever
 
 logger = logging.getLogger(__name__)
 
+# Try to import MCP client for fallback
+MCP_AVAILABLE = False
+mcp_manager = None
+try:
+    from config.mcp_client import mcp_manager
+    MCP_AVAILABLE = True
+    logger.info("MCP client available for fallback")
+except ImportError:
+    logger.info("MCP client not available - will use OpenAI TTS only")
+
 # Try to import pydub and check if it works
 PYDUB_AVAILABLE = False
 try:
@@ -233,6 +243,67 @@ Return ONLY the script with speaker labels, no additional commentary."""
         
         return lines
 
+    def _try_mcp_fallback(
+        self,
+        script: str,
+        session_id: str,
+        style: str,
+        output_path: str
+    ) -> Optional[str]:
+        """
+        Try to generate audio using MCP as fallback if OpenAI TTS failed.
+        
+        Args:
+            script: The podcast script
+            session_id: Session ID for unique file naming
+            style: Podcast style
+            output_path: Path to save the audio file
+            
+        Returns:
+            Path to generated audio file or None if failed
+        """
+        if not MCP_AVAILABLE or not mcp_manager:
+            logger.warning("MCP fallback not available")
+            return None
+        
+        try:
+            logger.info("Attempting MCP fallback for audio generation...")
+            
+            # Voice selection for MCP
+            if style == "conversational":
+                voice1 = "default"  # Alex (Host 1)
+                voice2 = "default"  # Sam (Host 2)
+            else:  # interview
+                voice1 = "default"  # Interviewer
+                voice2 = "default"  # Expert
+            
+            # Run async MCP call
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                audio_path = loop.run_until_complete(
+                    mcp_manager.generate_podcast_audio(
+                        script=script,
+                        voice1=voice1,
+                        voice2=voice2,
+                        output_path=output_path
+                    )
+                )
+            finally:
+                loop.close()
+            
+            if audio_path and os.path.exists(audio_path):
+                file_size = os.path.getsize(audio_path)
+                logger.info(f"MCP fallback succeeded: {audio_path} (size: {file_size} bytes)")
+                return audio_path
+            else:
+                logger.error("MCP fallback failed - file not created")
+                return None
+                
+        except Exception as e:
+            logger.error(f"MCP fallback error: {e}", exc_info=True)
+            return None
+
     def _generate_audio_segment(self, text: str, voice: str) -> Optional[bytes]:
         """
         Generate audio for a single text segment using OpenAI TTS.
@@ -376,11 +447,13 @@ Return ONLY the script with speaker labels, no additional commentary."""
                     return output_path
                 else:
                     logger.error("Combined audio file not created or empty")
-                    return None
+                    # Try MCP fallback if OpenAI TTS failed
+                    return self._try_mcp_fallback(script, session_id, style, output_path)
                     
             except Exception as e:
                 logger.error(f"Error combining audio segments: {e}", exc_info=True)
-                return None
+                # Try MCP fallback if OpenAI TTS failed
+                return self._try_mcp_fallback(script, session_id, style, output_path)
 
         except Exception as e:
             logger.error(f"Error generating podcast audio: {e}", exc_info=True)

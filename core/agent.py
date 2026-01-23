@@ -102,7 +102,11 @@ class PRISMAgent:
                     "next_node": None,
                     "should_continue": True,
                     "final_response": None,
-                    "response_citations": []
+                    "response_citations": [],
+                    "evaluation_scores": None,
+                    "evaluation_passed": False,
+                    "refinement_attempts": 0,
+                    "a2a_messages": previous_state.values.get("a2a_messages", []) if previous_state.values else []
                 }
             else:
                 # First message in thread - create fresh state

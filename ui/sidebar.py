@@ -76,6 +76,14 @@ def render_sidebar(course_options, degree_options, handle_start_session):
             if st.button("End Session", use_container_width=True):
                 reset_session()
                 st.rerun()
+            
+            # Agent Dashboard Toggle
+            st.markdown("---")
+            st.checkbox(
+                "🤖 Show Agent Dashboard",
+                key="show_agent_dashboard",
+                help="Display agent flow visualization and A2A messages"
+            )
         else:
             # Input Form - fields are enabled when session is not active
             # They will be disabled once session starts (handled by session state)

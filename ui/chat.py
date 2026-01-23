@@ -290,6 +290,26 @@ def render_chat_interface(generate_response):
     # Main chat area - no header, just chat
     display_chat_history()
     
+    # Agent Dashboard (if enabled)
+    show_agent_dashboard = st.session_state.get("show_agent_dashboard", False)
+    if show_agent_dashboard and st.session_state.user_context.get('is_ready'):
+        try:
+            from ui.agent_ui import render_agent_dashboard
+            from core.agent import get_prism_agent
+            
+            agent = get_prism_agent()
+            if agent and agent.graph:
+                try:
+                    thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+                    config = {"configurable": {"thread_id": thread_id}}
+                    current_state = agent.graph.get_state(config)
+                    if current_state and current_state.values:
+                        render_agent_dashboard(current_state.values, show_details=True)
+                except Exception as e:
+                    st.warning(f"Could not load agent state: {e}")
+        except ImportError:
+            pass
+    
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
     show_generate_more = False

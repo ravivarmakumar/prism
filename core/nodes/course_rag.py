@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, Any
 from retrieval.retriever import CourseRetriever
+from core.a2a import a2a_manager
 
 logger = logging.getLogger(__name__)
 
@@ -232,11 +233,33 @@ def course_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["next_node"] = "personalization"
         logger.info(f"Course content found ({len(result.get('retrieved_chunks', []))} chunks). Proceeding to personalization.")
         logger.info(f"Context preview: {state.get('course_context', '')[:200]}...")
+        
+        # Send A2A message to personalization agent
+        state = a2a_manager.send_message(
+            sender="course_rag",
+            receiver="personalization",
+            message_type="content_retrieved",
+            content={
+                "chunks_count": len(result.get('retrieved_chunks', [])),
+                "found": True,
+                "context_preview": state.get('course_context', '')[:200]
+            },
+            state=state
+        )
     else:
         # Content not found, need web search
         state["should_continue"] = True
         state["next_node"] = "web_search"
         logger.warning(f"Course content NOT found for query: '{query}' in course: '{state['course_name']}'. Proceeding to web search.")
+        
+        # Send A2A message to web search agent
+        state = a2a_manager.send_message(
+            sender="course_rag",
+            receiver="web_search",
+            message_type="content_not_found",
+            content={"query": query, "course_name": state["course_name"]},
+            state=state
+        )
     
     return state
 
