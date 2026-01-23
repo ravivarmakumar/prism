@@ -156,6 +156,7 @@ def handle_user_input(user_query, generate_response):
     
     # Set processing flag immediately so dashboard shows
     st.session_state.is_processing_input = True
+    st.session_state._response_generated = False
     
     # Check if this is a follow-up answer
     if st.session_state.get('follow_up_needed', False):
@@ -219,19 +220,28 @@ def handle_user_input(user_query, generate_response):
         if 'original_query' in st.session_state:
             del st.session_state.original_query
         
-        # Store User Query in State
+        # Store User Query in State FIRST so it appears in chat
         st.session_state.chat_history.append({"role": "user", "content": user_query})
         
-        # Generate and display response
-        # Don't use spinner - dashboard will show progress instead
+        # Generate response with visual feedback
         with st.chat_message("assistant", avatar="🧠"):
+            # Show thinking indicator while processing
+            thinking_placeholder = st.empty()
+            with thinking_placeholder.container():
+                st.info("🤔 PRISM Agent is thinking...")
+            
+            # Generate response
             response = generate_response(user_query)
-    
-    # Store Agent Response in State
-    st.session_state.chat_history.append({"role": "assistant", "content": response})
-    # Clear processing flag - answer is ready
-    st.session_state.is_processing_input = False
-    st.rerun()
+            
+            # Clear thinking indicator and show response
+            thinking_placeholder.empty()
+            st.markdown(response)
+        
+        # Store Agent Response in State
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        # Clear processing flag - answer is ready
+        st.session_state.is_processing_input = False
+        st.rerun()
 
 
 def handle_flashcard_generation(topic: str):
@@ -353,6 +363,9 @@ def render_chat_interface(generate_response):
     """Renders the main chat interface."""
     # Main chat area - no header, just chat
     display_chat_history()
+    
+    # Show agent dashboard if processing (appears below chat history, above input)
+    _show_agent_dashboard_if_processing()
     
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
@@ -476,10 +489,6 @@ def render_chat_interface(generate_response):
                     if podcast_style != st.session_state.podcast_style:
                         st.session_state.podcast_style = podcast_style
                         st.rerun()
-        
-        # Show agent dashboard right below chat history (before input form)
-        # This will appear when processing and disappear when done
-        _show_agent_dashboard_if_processing()
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
