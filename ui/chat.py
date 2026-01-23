@@ -85,6 +85,59 @@ def display_chat_history():
                     display_podcast_player(podcast)
 
 
+def _show_agent_dashboard_if_processing():
+    """Show agent dashboard if currently processing a query."""
+    if not st.session_state.user_context.get('is_ready'):
+        return
+    
+    # Check if we're processing (user just submitted but no response yet)
+    is_processing = st.session_state.get('is_processing_input', False)
+    
+    # Also check agent state
+    try:
+        from ui.agent_ui import render_agent_dashboard_compact
+        from core.agent import get_prism_agent
+        
+        agent = get_prism_agent()
+        if agent and agent.graph:
+            try:
+                thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+                config = {"configurable": {"thread_id": thread_id}}
+                current_state = agent.graph.get_state(config)
+                
+                if current_state and current_state.values:
+                    state_values = current_state.values
+                    # Check if processing (has query but no final response yet)
+                    has_query = bool(state_values.get("query") or state_values.get("refined_query"))
+                    has_final_response = bool(state_values.get("final_response"))
+                    current_node = state_values.get("current_node", "start")
+                    
+                    # Show dashboard if:
+                    # 1. We have a query
+                    # 2. No final response yet OR still processing (not at start/end)
+                    # 3. OR we're in processing state
+                    is_processing_state = has_query and (
+                        not has_final_response or 
+                        (current_node not in ["end", "start"] and current_node)
+                    )
+                    
+                    if is_processing_state or is_processing:
+                        render_agent_dashboard_compact(state_values, is_processing=True)
+            except Exception:
+                # If state not available yet but we're processing, show empty dashboard
+                if is_processing:
+                    initial_state = {
+                        "current_node": "start",
+                        "is_vague": False,
+                        "is_relevant": False,
+                        "course_content_found": False,
+                        "a2a_messages": []
+                    }
+                    render_agent_dashboard_compact(initial_state, is_processing=True)
+    except Exception:
+        pass
+
+
 def handle_user_input(user_query, generate_response):
     """
     Handles user input and generates response.
@@ -96,6 +149,9 @@ def handle_user_input(user_query, generate_response):
     """
     if not user_query:
         return
+    
+    # Set processing flag immediately so dashboard shows
+    st.session_state.is_processing_input = True
     
     # Check if this is a follow-up answer
     if st.session_state.get('follow_up_needed', False):
@@ -163,12 +219,14 @@ def handle_user_input(user_query, generate_response):
         st.session_state.chat_history.append({"role": "user", "content": user_query})
         
         # Generate and display response
+        # Don't use spinner - dashboard will show progress instead
         with st.chat_message("assistant", avatar="🧠"):
-            with st.spinner(f"PRISM Agent (Course: {st.session_state.user_context['course']}) is thinking..."):
-                response = generate_response(user_query)
+            response = generate_response(user_query)
     
     # Store Agent Response in State
     st.session_state.chat_history.append({"role": "assistant", "content": response})
+    # Clear processing flag - answer is ready
+    st.session_state.is_processing_input = False
     st.rerun()
 
 
@@ -290,38 +348,6 @@ def render_chat_interface(generate_response):
     # Main chat area - no header, just chat
     display_chat_history()
     
-    # Agent Dashboard - Show compact version below search box when processing
-    if st.session_state.user_context.get('is_ready'):
-        try:
-            from ui.agent_ui import render_agent_dashboard_compact
-            from core.agent import get_prism_agent
-            
-            agent = get_prism_agent()
-            if agent and agent.graph:
-                try:
-                    thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-                    config = {"configurable": {"thread_id": thread_id}}
-                    current_state = agent.graph.get_state(config)
-                    
-                    if current_state and current_state.values:
-                        state_values = current_state.values
-                        # Check if processing (has query but no final response yet, or still in progress)
-                        has_query = state_values.get("query") or state_values.get("refined_query")
-                        has_final_response = bool(state_values.get("final_response"))
-                        current_node = state_values.get("current_node", "start")
-                        is_processing = has_query and (not has_final_response or current_node not in ["end", "start"])
-                        
-                        # Only show dashboard if processing
-                        if is_processing:
-                            render_agent_dashboard_compact(state_values, is_processing=True)
-                except Exception as e:
-                    # Silently fail - don't show error if state not available
-                    pass
-        except ImportError:
-            pass
-        except Exception:
-            pass
-    
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
     show_generate_more = False
@@ -396,14 +422,8 @@ def render_chat_interface(generate_response):
         if 'last_input_value' not in st.session_state:
             st.session_state.last_input_value = ""
         
-        # Reset processing flag at the start of each render cycle if it was set
-        # This allows the next submission to proceed
-        if st.session_state.is_processing_input:
-            # Only reset if we're not in the middle of a form submission
-            # Check if the last message in chat history is an assistant message (processing complete)
-            if (st.session_state.chat_history and 
-                st.session_state.chat_history[-1].get("role") == "assistant"):
-                st.session_state.is_processing_input = False
+        # Don't auto-reset processing flag here - let it be controlled by handle_user_input
+        # The flag will be cleared when response is ready
         
         # Show options popover OUTSIDE the form (only when plus was clicked)
         # This ensures it's visible and doesn't get hidden during form submission
@@ -451,34 +471,9 @@ def render_chat_interface(generate_response):
                         st.session_state.podcast_style = podcast_style
                         st.rerun()
         
-        # Show agent dashboard right below search box (before input form)
+        # Show agent dashboard right below chat history (before input form)
         # This will appear when processing and disappear when done
-        try:
-            from ui.agent_ui import render_agent_dashboard_compact
-            from core.agent import get_prism_agent
-            
-            agent = get_prism_agent()
-            if agent and agent.graph:
-                try:
-                    thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-                    config = {"configurable": {"thread_id": thread_id}}
-                    current_state = agent.graph.get_state(config)
-                    
-                    if current_state and current_state.values:
-                        state_values = current_state.values
-                        # Check if processing (has query but no final response yet, or still in progress)
-                        has_query = state_values.get("query") or state_values.get("refined_query")
-                        has_final_response = bool(state_values.get("final_response"))
-                        current_node = state_values.get("current_node", "start")
-                        is_processing = has_query and (not has_final_response or current_node not in ["end", "start"])
-                        
-                        # Show compact dashboard if processing
-                        if is_processing:
-                            render_agent_dashboard_compact(state_values, is_processing=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        _show_agent_dashboard_if_processing()
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
