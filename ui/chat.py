@@ -572,7 +572,10 @@ def render_chat_interface(generate_response):
                     if not st.session_state.flashcard_mode and not st.session_state.podcast_mode:
                         st.session_state.chat_history.append({"role": "user", "content": current_input})
 
-                    # Process the input (dashboard will update via reruns during processing)
+                    # Rerun immediately to show dashboard and user message
+                    st.rerun()
+                    
+                    # After rerun, process the input
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
@@ -583,7 +586,7 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
-                        # Process regular query with real-time dashboard updates
+                        # Process regular query (user message already added above)
                         handle_user_input_with_updates(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)
