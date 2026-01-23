@@ -5,13 +5,30 @@ import json
 import asyncio
 import tempfile
 import os
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List, Tuple
 from openai import OpenAI
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
-from config.mcp_client import mcp_manager
 from retrieval.retriever import CourseRetriever
 
 logger = logging.getLogger(__name__)
+
+# Try to import pydub and check if it works
+PYDUB_AVAILABLE = False
+try:
+    from pydub import AudioSegment
+    # Test if pydub can actually work (it needs ffmpeg for MP3)
+    try:
+        # Try a simple test to see if AudioSegment works
+        test_segment = AudioSegment.empty()
+        PYDUB_AVAILABLE = True
+        logger.info("pydub imported successfully")
+    except Exception as e:
+        logger.warning(f"pydub imported but may not work properly: {e}")
+        PYDUB_AVAILABLE = False
+except ImportError as e:
+    logger.warning(f"pydub not available: {e}. Audio combination may fail.")
+    PYDUB_AVAILABLE = False
 
 
 class PodcastGenerator:
@@ -116,14 +133,160 @@ Return ONLY the script with speaker labels, no additional commentary."""
             logger.error(f"Error generating podcast script: {e}", exc_info=True)
             return ""
 
-    async def _generate_audio(
+    def _parse_script(self, script: str, style: str) -> List[Tuple[str, str]]:
+        """
+        Parse the script into speaker-dialogue pairs.
+        
+        Args:
+            script: The podcast script with speaker labels
+            style: Podcast style (conversational or interview)
+            
+        Returns:
+            List of (speaker, dialogue) tuples
+        """
+        lines = []
+        if style == "conversational":
+            # More flexible patterns: "Alex:", "Sam:", or variations
+            patterns = [
+                r'^(Alex|Sam):\s*(.+)$',  # Standard format
+                r'^(Alex|Sam)\s*:\s*(.+)$',  # With spaces around colon
+                r'^(Alex|Sam)\s+-\s*(.+)$',  # With dash
+            ]
+            speakers = ["Alex", "Sam"]
+        else:
+            # More flexible patterns for interview style
+            patterns = [
+                r'^(Host|Guest):\s*(.+)$',
+                r'^(Host|Guest)\s*:\s*(.+)$',
+                r'^(Host|Guest)\s+-\s*(.+)$',
+                r'^(Interviewer|Expert):\s*(.+)$',  # Alternative names
+            ]
+            speakers = ["Host", "Guest"]
+        
+        current_speaker = None
+        current_dialogue = []
+        
+        for line in script.split('\n'):
+            line = line.strip()
+            if not line:
+                # Empty line - save current dialogue if any
+                if current_speaker and current_dialogue:
+                    dialogue_text = " ".join(current_dialogue)
+                    if dialogue_text:
+                        lines.append((current_speaker, dialogue_text))
+                    current_dialogue = []
+                continue
+            
+            # Try to match any pattern
+            matched = False
+            for pattern in patterns:
+                match = re.match(pattern, line, re.IGNORECASE)
+                if match:
+                    # Save previous dialogue if any
+                    if current_speaker and current_dialogue:
+                        dialogue_text = " ".join(current_dialogue)
+                        if dialogue_text:
+                            lines.append((current_speaker, dialogue_text))
+                    
+                    # Start new dialogue
+                    speaker = match.group(1)
+                    dialogue = match.group(2).strip() if len(match.groups()) >= 2 else ""
+                    
+                    # Normalize speaker name
+                    if style == "conversational":
+                        if speaker.lower() in ["alex"]:
+                            current_speaker = "Alex"
+                        elif speaker.lower() in ["sam"]:
+                            current_speaker = "Sam"
+                        else:
+                            # Default to first speaker if unknown
+                            current_speaker = "Alex"
+                    else:
+                        if speaker.lower() in ["host", "interviewer"]:
+                            current_speaker = "Host"
+                        elif speaker.lower() in ["guest", "expert"]:
+                            current_speaker = "Guest"
+                        else:
+                            current_speaker = "Host"
+                    
+                    current_dialogue = [dialogue] if dialogue else []
+                    matched = True
+                    break
+            
+            if not matched:
+                # Continuation of current dialogue
+                if current_speaker:
+                    current_dialogue.append(line)
+                else:
+                    # No speaker identified yet, try to infer or use default
+                    if style == "conversational":
+                        current_speaker = "Alex"
+                    else:
+                        current_speaker = "Host"
+                    current_dialogue = [line]
+        
+        # Save last dialogue
+        if current_speaker and current_dialogue:
+            dialogue_text = " ".join(current_dialogue)
+            if dialogue_text:
+                lines.append((current_speaker, dialogue_text))
+        
+        return lines
+
+    def _generate_audio_segment(self, text: str, voice: str) -> Optional[bytes]:
+        """
+        Generate audio for a single text segment using OpenAI TTS.
+        
+        Args:
+            text: Text to convert to speech
+            voice: Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+            
+        Returns:
+            Audio bytes or None if failed
+        """
+        if not text or not text.strip():
+            logger.warning("Empty text provided for audio generation")
+            return None
+        
+        # Limit text length to avoid API errors (OpenAI TTS has a limit)
+        max_length = 4096  # OpenAI TTS character limit
+        if len(text) > max_length:
+            logger.warning(f"Text too long ({len(text)} chars), truncating to {max_length}")
+            text = text[:max_length]
+        
+        try:
+            logger.debug(f"Calling OpenAI TTS API with voice: {voice}, text length: {len(text)}")
+            response = self.client.audio.speech.create(
+                model="tts-1",
+                voice=voice,
+                input=text
+            )
+            
+            if response and hasattr(response, 'content'):
+                audio_bytes = response.content
+                logger.debug(f"Successfully generated audio segment ({len(audio_bytes)} bytes)")
+                return audio_bytes
+            else:
+                logger.error("OpenAI TTS API returned invalid response")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating audio segment with OpenAI TTS: {e}", exc_info=True)
+            # Check for specific error types
+            if "rate_limit" in str(e).lower():
+                logger.error("Rate limit exceeded. Please wait and try again.")
+            elif "invalid" in str(e).lower() or "bad_request" in str(e).lower():
+                logger.error(f"Invalid request to OpenAI TTS API. Voice: {voice}, Text length: {len(text)}")
+            return None
+
+    def _generate_audio(
         self,
         script: str,
         session_id: str,
         style: str = "conversational"
     ) -> Optional[str]:
         """
-        Generate audio from script using MCP TTS service.
+        Generate audio from script using OpenAI TTS API.
 
         Args:
             script: The podcast script
@@ -138,26 +301,86 @@ Return ONLY the script with speaker labels, no additional commentary."""
             output_filename = f"podcast_{session_id}.mp3"
             output_path = os.path.join(self.temp_dir, output_filename)
 
+            logger.info(f"Generating audio with OpenAI TTS API...")
+            logger.info(f"Script length: {len(script)} characters")
+            logger.info(f"Output path: {output_path}")
+
             # Voice selection based on style
+            # OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
             if style == "conversational":
-                voice1 = "default"  # Alex (Host 1)
-                voice2 = "default"  # Sam (Host 2)
+                voice1 = "nova"  # Alex (Host 1) - friendly, warm
+                voice2 = "echo"  # Sam (Host 2) - clear, engaging
             else:  # interview
-                voice1 = "default"  # Interviewer
-                voice2 = "default"  # Expert
+                voice1 = "onyx"  # Host (Interviewer) - professional
+                voice2 = "shimmer"  # Guest (Expert) - knowledgeable
 
-            logger.info(f"Generating audio with MCP TTS service...")
+            # Parse script into speaker-dialogue pairs
+            logger.info(f"Parsing script (first 200 chars): {script[:200]}...")
+            script_lines = self._parse_script(script, style)
+            
+            if not script_lines:
+                logger.error(f"No valid script lines found after parsing. Script preview: {script[:500]}")
+                logger.error("Script might not be in the expected format. Expected format: 'Speaker: dialogue'")
+                return None
 
-            # Generate audio using MCP client
-            audio_path = await mcp_manager.generate_podcast_audio(
-                script=script,
-                voice1=voice1,
-                voice2=voice2,
-                output_path=output_path
-            )
+            logger.info(f"Parsed {len(script_lines)} script segments")
+            logger.info(f"First few segments: {script_lines[:3]}")
 
-            logger.info(f"Audio generated successfully: {audio_path}")
-            return audio_path
+            # Generate audio for each segment and collect bytes
+            audio_segments_bytes = []
+            for i, (speaker, dialogue) in enumerate(script_lines):
+                # Determine which voice to use based on speaker
+                if style == "conversational":
+                    voice = voice1 if speaker.lower() == "alex" else voice2
+                else:
+                    voice = voice1 if speaker.lower() == "host" else voice2
+                
+                logger.info(f"Generating audio for {speaker} (segment {i+1}/{len(script_lines)})...")
+                logger.debug(f"Dialogue text (first 100 chars): {dialogue[:100]}...")
+                
+                try:
+                    audio_bytes = self._generate_audio_segment(dialogue, voice)
+                except Exception as e:
+                    logger.error(f"Exception generating audio segment {i+1}: {e}", exc_info=True)
+                    audio_bytes = None
+                
+                if audio_bytes:
+                    audio_segments_bytes.append(audio_bytes)
+                    logger.info(f"Successfully generated segment {i+1} ({len(audio_bytes)} bytes)")
+                else:
+                    logger.warning(f"Failed to generate audio for segment {i+1} (speaker: {speaker}, voice: {voice})")
+
+            if not audio_segments_bytes:
+                logger.error(f"No audio segments were generated successfully out of {len(script_lines)} script lines")
+                logger.error("This might indicate an issue with OpenAI TTS API calls")
+                return None
+
+            # Combine all audio segments by concatenating MP3 bytes directly
+            # OpenAI TTS generates MP3 files that can be concatenated if they have the same format
+            logger.info(f"Combining {len(audio_segments_bytes)} audio segments by concatenating MP3 bytes...")
+            
+            try:
+                # Simple concatenation: MP3 files from OpenAI TTS are typically compatible
+                # We'll concatenate them directly without pydub/ffmpeg
+                # This works because OpenAI TTS generates consistent MP3 format files
+                combined_bytes = b''.join(audio_segments_bytes)
+                
+                # Write combined audio to file
+                with open(output_path, 'wb') as f:
+                    f.write(combined_bytes)
+                
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"Audio combined successfully: {output_path} (size: {file_size} bytes)")
+                    logger.info("Note: Used direct MP3 byte concatenation. Audio should play correctly in Streamlit.")
+                    return output_path
+                else:
+                    logger.error("Combined audio file not created or empty")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Error combining audio segments: {e}", exc_info=True)
+                return None
 
         except Exception as e:
             logger.error(f"Error generating podcast audio: {e}", exc_info=True)
@@ -230,18 +453,31 @@ Return ONLY the script with speaker labels, no additional commentary."""
 
             # Generate audio from script
             logger.info("Generating podcast audio...")
-            audio_path = await self._generate_audio(
+            try:
+                audio_path = self._generate_audio(
                 script=script,
                 session_id=session_id,
                 style=style
             )
-
-            if not audio_path or not os.path.exists(audio_path):
+            except Exception as e:
+                logger.error(f"Exception during audio generation: {e}", exc_info=True)
                 return {
                     "audio_path": None,
                     "script": script,
                     "success": False,
-                    "message": "Failed to generate podcast audio. Script generated successfully."
+                    "message": f"Error generating audio: {str(e)}. Script was generated successfully."
+                }
+
+            if not audio_path or not os.path.exists(audio_path):
+                # Provide more specific error message
+                error_msg = "Failed to generate podcast audio. Script generated successfully."
+                error_msg += " Please check the application logs for detailed error information."
+                
+                return {
+                    "audio_path": None,
+                    "script": script,
+                    "success": False,
+                    "message": error_msg
                 }
 
             return {
