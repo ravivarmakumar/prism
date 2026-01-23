@@ -91,9 +91,9 @@ def _show_agent_dashboard_if_processing():
         return
     
     # Check if we're processing (user just submitted but no response yet)
-    is_processing = st.session_state.get('is_processing_input', False)
+    is_processing_flag = st.session_state.get('is_processing_input', False)
     
-    # Also check agent state
+    # Check agent state
     try:
         from ui.agent_ui import render_agent_dashboard_compact
         from core.agent import get_prism_agent
@@ -113,27 +113,31 @@ def _show_agent_dashboard_if_processing():
                     current_node = state_values.get("current_node", "start")
                     
                     # Show dashboard if:
-                    # 1. We have a query
-                    # 2. No final response yet OR still processing (not at start/end)
-                    # 3. OR we're in processing state
-                    is_processing_state = has_query and (
-                        not has_final_response or 
-                        (current_node not in ["end", "start"] and current_node)
+                    # 1. We have a query AND no final response yet
+                    # 2. OR we're in processing state (flag set)
+                    # 3. Don't show if we have final response and at end
+                    should_show = (
+                        (has_query and not has_final_response) or
+                        (is_processing_flag and not has_final_response) or
+                        (has_query and current_node not in ["end", "start"] and not has_final_response)
                     )
                     
-                    if is_processing_state or is_processing:
+                    if should_show:
                         render_agent_dashboard_compact(state_values, is_processing=True)
+                        return
             except Exception:
-                # If state not available yet but we're processing, show empty dashboard
-                if is_processing:
-                    initial_state = {
-                        "current_node": "start",
-                        "is_vague": False,
-                        "is_relevant": False,
-                        "course_content_found": False,
-                        "a2a_messages": []
-                    }
-                    render_agent_dashboard_compact(initial_state, is_processing=True)
+                pass
+        
+        # If state not available yet but we're processing, show initial dashboard
+        if is_processing_flag:
+            initial_state = {
+                "current_node": "start",
+                "is_vague": False,
+                "is_relevant": False,
+                "course_content_found": False,
+                "a2a_messages": []
+            }
+            render_agent_dashboard_compact(initial_state, is_processing=True)
     except Exception:
         pass
 
@@ -290,6 +294,8 @@ def handle_flashcard_generation(topic: str):
 
 def handle_podcast_generation(topic: str, style: str = "conversational"):
     """Handle podcast generation request."""
+    # Clear processing flag when done
+    st.session_state.is_processing_input = False
     from core.podcast_generator import run_async_podcast_generation
     import uuid
 
@@ -551,12 +557,16 @@ def render_chat_interface(generate_response):
                     # Update last input value to track form submissions
                     st.session_state.last_input_value = current_input
 
-                    # Set processing flag to prevent loops (will be cleared on next render)
+                    # Set processing flag IMMEDIATELY so dashboard shows right away
                     st.session_state.is_processing_input = True
 
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
 
+                    # Rerun immediately to show dashboard, then process
+                    st.rerun()
+                    
+                    # After rerun, process the input
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
