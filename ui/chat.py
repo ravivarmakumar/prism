@@ -93,6 +93,9 @@ def _show_agent_dashboard_if_processing():
     # Check if we're processing (user just submitted but no response yet)
     is_processing_flag = st.session_state.get('is_processing_input', False)
     
+    if not is_processing_flag:
+        return
+    
     # Check agent state
     try:
         from ui.agent_ui import render_agent_dashboard_compact
@@ -112,40 +115,31 @@ def _show_agent_dashboard_if_processing():
                     has_final_response = bool(state_values.get("final_response"))
                     current_node = state_values.get("current_node", "start")
                     
-                    # Show dashboard if:
-                    # 1. We have a query AND no final response yet
-                    # 2. OR we're in processing state (flag set)
-                    # 3. Don't show if we have final response and at end
-                    should_show = (
-                        (has_query and not has_final_response) or
-                        (is_processing_flag and not has_final_response) or
-                        (has_query and current_node not in ["end", "start"] and not has_final_response)
-                    )
-                    
-                    if should_show:
+                    # Show dashboard if we have a query and no final response yet
+                    if has_query and not has_final_response:
                         render_agent_dashboard_compact(state_values, is_processing=True)
                         return
-            except Exception:
+            except Exception as e:
+                # If error getting state, still show initial dashboard
                 pass
         
         # If state not available yet but we're processing, show initial dashboard
-        if is_processing_flag:
-            initial_state = {
-                "current_node": "start",
-                "is_vague": False,
-                "is_relevant": False,
-                "course_content_found": False,
-                "a2a_messages": []
-            }
-            render_agent_dashboard_compact(initial_state, is_processing=True)
+        initial_state = {
+            "current_node": "start",
+            "is_vague": False,
+            "is_relevant": False,
+            "course_content_found": False,
+            "a2a_messages": []
+        }
+        render_agent_dashboard_compact(initial_state, is_processing=True)
     except Exception:
         pass
 
 
-def handle_user_input(user_query, generate_response):
+def handle_user_input_after_rerun(user_query, generate_response):
     """
-    Handles user input and generates response.
-    Supports follow-up questions for vague queries.
+    Handles user input after initial rerun (user message already in chat).
+    Generates response and updates dashboard in real-time.
     
     Args:
         user_query: The user's question/input
@@ -153,10 +147,6 @@ def handle_user_input(user_query, generate_response):
     """
     if not user_query:
         return
-    
-    # Set processing flag immediately so dashboard shows
-    st.session_state.is_processing_input = True
-    st.session_state._response_generated = False
     
     # Check if this is a follow-up answer
     if st.session_state.get('follow_up_needed', False):
@@ -220,9 +210,7 @@ def handle_user_input(user_query, generate_response):
         if 'original_query' in st.session_state:
             del st.session_state.original_query
         
-        # Store User Query in State FIRST so it appears in chat
-        st.session_state.chat_history.append({"role": "user", "content": user_query})
-        
+        # User message already in chat from rerun, now generate response
         # Generate response with visual feedback
         with st.chat_message("assistant", avatar="🧠"):
             # Show thinking indicator while processing
@@ -230,7 +218,7 @@ def handle_user_input(user_query, generate_response):
             with thinking_placeholder.container():
                 st.info("🤔 PRISM Agent is thinking...")
             
-            # Generate response
+            # Generate response (this will update agent state, dashboard will show updates)
             response = generate_response(user_query)
             
             # Clear thinking indicator and show response
@@ -572,7 +560,14 @@ def render_chat_interface(generate_response):
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
 
-                    # Process the input (dashboard will show on next render)
+                    # Store user message immediately so it appears in chat
+                    if not st.session_state.flashcard_mode and not st.session_state.podcast_mode:
+                        st.session_state.chat_history.append({"role": "user", "content": current_input})
+
+                    # Rerun immediately to show dashboard and user message
+                    st.rerun()
+                    
+                    # After rerun, process the input
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
@@ -583,10 +578,8 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
-                        handle_user_input(current_input, generate_response)
-
-                    # Don't clear the flag here - let it be cleared on the next render cycle
-                    # This prevents the form from processing again during the same submission
+                        # Process regular query (user message already added above)
+                        handle_user_input_after_rerun(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)
 

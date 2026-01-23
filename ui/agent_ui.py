@@ -38,28 +38,24 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
     current_node = state.get("current_node", "start")
     status_message = get_status_message(current_node, state)
     
-    # Use Streamlit container for rounded border effect
-    with st.container():
-        # Add custom CSS for rounded border
-        st.markdown("""
-        <style>
-        .agent-dashboard-container {
-            border: 2px solid #00853C;
-            border-radius: 12px;
-            padding: 16px;
-            margin: 12px 0;
-            background-color: #f8f9fa;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Title
-        st.markdown("### 🤖 Agent Dashboard")
-        
-        # Status message (disappearing)
-        if is_processing:
-            st.info(f"**{status_message}**")
+    # Create rounded container with border using HTML
+    st.markdown("""
+    <div style='
+        border: 2px solid #00853C;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 12px 0;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    '>
+    """, unsafe_allow_html=True)
+    
+    # Title
+    st.markdown("### 🤖 Agent Dashboard")
+    
+    # Status message (disappearing - updates in real-time)
+    if is_processing:
+        st.info(f"**{status_message}**")
         
         # Metrics row (always visible)
         st.markdown("#### 📊 Status")
@@ -121,8 +117,11 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
                     except:
                         time_display = timestamp[:8] if len(timestamp) > 8 else ""
                 
-                # Show message with fade effect
+                # Show message with fade effect (disappearing messages)
                 st.caption(f"🔄 {readable_msg} {time_display}")
+    
+    # Close container div
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_agent_flow_simple(state: Dict[str, Any]):
