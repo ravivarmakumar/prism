@@ -1,8 +1,11 @@
 """Agent-to-Agent (A2A) Communication Framework."""
 
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from core.state import AgentState
+
+logger = logging.getLogger(__name__)
 
 
 class A2AMessage:
@@ -84,11 +87,15 @@ class A2AManager:
         if "a2a_messages" not in state:
             state["a2a_messages"] = []
         
-        state["a2a_messages"].append(message.to_dict())
+        message_dict = message.to_dict()
+        state["a2a_messages"].append(message_dict)
         
         # Keep state message list manageable
         if len(state["a2a_messages"]) > self.max_history:
             state["a2a_messages"] = state["a2a_messages"][-self.max_history:]
+        
+        # Log A2A message for debugging
+        logger.debug(f"A2A Message: {sender} → {receiver} [{message_type}] (Total: {len(state['a2a_messages'])})")
         
         return state
     

@@ -290,9 +290,8 @@ def render_chat_interface(generate_response):
     # Main chat area - no header, just chat
     display_chat_history()
     
-    # Agent Dashboard (if enabled)
-    show_agent_dashboard = st.session_state.get("show_agent_dashboard", False)
-    if show_agent_dashboard and st.session_state.user_context.get('is_ready'):
+    # Agent Dashboard - ALWAYS SHOW when session is active (AG-UI and A2A are always active)
+    if st.session_state.user_context.get('is_ready'):
         try:
             from ui.agent_ui import render_agent_dashboard
             from core.agent import get_prism_agent
@@ -303,12 +302,40 @@ def render_chat_interface(generate_response):
                     thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
                     config = {"configurable": {"thread_id": thread_id}}
                     current_state = agent.graph.get_state(config)
+                    
                     if current_state and current_state.values:
+                        # State exists - show full dashboard
                         render_agent_dashboard(current_state.values, show_details=True)
+                    else:
+                        # No state yet - show initial/empty dashboard
+                        from core.state import AgentState
+                        initial_state: Dict[str, Any] = {
+                            "current_node": "start",
+                            "is_vague": False,
+                            "is_relevant": False,
+                            "course_content_found": False,
+                            "evaluation_passed": False,
+                            "a2a_messages": []
+                        }
+                        render_agent_dashboard(initial_state, show_details=False)
                 except Exception as e:
+                    # Show error but still try to show something
                     st.warning(f"Could not load agent state: {e}")
-        except ImportError:
-            pass
+                    # Show empty dashboard
+                    from ui.agent_ui import render_agent_dashboard
+                    initial_state = {
+                        "current_node": "start",
+                        "is_vague": False,
+                        "is_relevant": False,
+                        "course_content_found": False,
+                        "evaluation_passed": False,
+                        "a2a_messages": []
+                    }
+                    render_agent_dashboard(initial_state, show_details=False)
+        except ImportError as e:
+            st.error(f"Error importing agent UI: {e}")
+        except Exception as e:
+            st.error(f"Error displaying agent dashboard: {e}")
     
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag

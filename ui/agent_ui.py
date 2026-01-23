@@ -55,28 +55,38 @@ def render_agent_flow(state: Dict[str, Any]):
     # Create flow visualization
     flow_html = "<div style='display: flex; flex-direction: column; gap: 10px; margin: 10px 0;'>"
     
-    for i, node in enumerate(nodes):
-        # Determine status
-        node_index = nodes.index(current_node) if current_node in nodes else -1
-        if i < node_index:
-            status = "completed"
-            color = "#4CAF50"  # Green
-            icon = "✅"
-        elif i == node_index:
-            status = "active"
-            color = "#00853C"  # UNT Green
-            icon = "🟢"
-        else:
-            status = "pending"
-            color = "#CCCCCC"  # Gray
-            icon = "⚪"
-        
-        node_display = node.replace('_', ' ').title()
-        flow_html += f"""
-        <div style='padding: 12px; background-color: {color}; color: white; border-radius: 8px; margin: 5px 0;'>
-            {icon} {node_display}
-        </div>
-        """
+    # If no state or at start, show all as pending
+    if current_node == "start" or current_node not in nodes:
+        for node in nodes:
+            node_display = node.replace('_', ' ').title()
+            flow_html += f"""
+            <div style='padding: 12px; background-color: #CCCCCC; color: white; border-radius: 8px; margin: 5px 0;'>
+                ⚪ {node_display} (Waiting for query...)
+            </div>
+            """
+    else:
+        for i, node in enumerate(nodes):
+            # Determine status
+            node_index = nodes.index(current_node) if current_node in nodes else -1
+            if i < node_index:
+                status = "completed"
+                color = "#4CAF50"  # Green
+                icon = "✅"
+            elif i == node_index:
+                status = "active"
+                color = "#00853C"  # UNT Green
+                icon = "🟢"
+            else:
+                status = "pending"
+                color = "#CCCCCC"  # Gray
+                icon = "⚪"
+            
+            node_display = node.replace('_', ' ').title()
+            flow_html += f"""
+            <div style='padding: 12px; background-color: {color}; color: white; border-radius: 8px; margin: 5px 0;'>
+                {icon} {node_display}
+            </div>
+            """
     
     flow_html += "</div>"
     st.markdown(flow_html, unsafe_allow_html=True)
@@ -146,19 +156,31 @@ def render_agent_decisions(state: Dict[str, Any]):
     
     with col1:
         is_relevant = state.get("is_relevant", False)
-        st.metric("Is Relevant", "✅ Yes" if is_relevant else "❌ No")
+        if "is_relevant" in state:
+            st.metric("Is Relevant", "✅ Yes" if is_relevant else "❌ No")
+        else:
+            st.metric("Is Relevant", "⏳ Pending")
     
     with col2:
         content_found = state.get("course_content_found", False)
-        st.metric("Content Found", "✅ Yes" if content_found else "❌ No")
+        if "course_content_found" in state:
+            st.metric("Content Found", "✅ Yes" if content_found else "❌ No")
+        else:
+            st.metric("Content Found", "⏳ Pending")
     
     with col3:
         is_vague = state.get("is_vague", False)
-        st.metric("Is Vague", "⚠️ Yes" if is_vague else "✅ No")
+        if "is_vague" in state:
+            st.metric("Is Vague", "⚠️ Yes" if is_vague else "✅ No")
+        else:
+            st.metric("Is Vague", "⏳ Pending")
     
     with col4:
         eval_passed = state.get("evaluation_passed", False)
-        st.metric("Evaluation", "✅ Passed" if eval_passed else "⚠️ Failed")
+        if "evaluation_passed" in state:
+            st.metric("Evaluation", "✅ Passed" if eval_passed else "⚠️ Failed")
+        else:
+            st.metric("Evaluation", "⏳ Pending")
 
 
 def render_agent_dashboard(state: Dict[str, Any], show_details: bool = True):
@@ -171,17 +193,21 @@ def render_agent_dashboard(state: Dict[str, Any], show_details: bool = True):
     """
     st.markdown("---")
     st.markdown("## 🤖 Agent Dashboard")
+    st.caption("AG-UI and A2A are always active. This dashboard shows real-time agent activity.")
     
-    # Agent flow visualization
+    # Always show agent flow visualization (even if empty)
     render_agent_flow(state)
     
-    # Agent decisions
+    # Always show agent decisions (will show defaults if no state)
     render_agent_decisions(state)
     
-    # A2A messages
+    # A2A messages - always show section, even if empty
     a2a_messages = state.get("a2a_messages", [])
     if a2a_messages:
         render_a2a_messages(a2a_messages)
+    else:
+        st.markdown("### 📨 Agent-to-Agent Messages")
+        st.info("No A2A messages yet. Messages will appear here as agents communicate. Ask a question to see agent-to-agent communication.")
     
     # Additional details in expander
     if show_details:

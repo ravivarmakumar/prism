@@ -235,6 +235,7 @@ def course_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Context preview: {state.get('course_context', '')[:200]}...")
         
         # Send A2A message to personalization agent
+        logger.info("Sending A2A message: course_rag → personalization (content_retrieved)")
         state = a2a_manager.send_message(
             sender="course_rag",
             receiver="personalization",
@@ -246,6 +247,7 @@ def course_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
             },
             state=state
         )
+        logger.info(f"A2A message sent. Total A2A messages in state: {len(state.get('a2a_messages', []))}")
     else:
         # Content not found, need web search
         state["should_continue"] = True
@@ -253,6 +255,7 @@ def course_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning(f"Course content NOT found for query: '{query}' in course: '{state['course_name']}'. Proceeding to web search.")
         
         # Send A2A message to web search agent
+        logger.info("Sending A2A message: course_rag → web_search (content_not_found)")
         state = a2a_manager.send_message(
             sender="course_rag",
             receiver="web_search",
@@ -260,6 +263,7 @@ def course_rag_node(state: Dict[str, Any]) -> Dict[str, Any]:
             content={"query": query, "course_name": state["course_name"]},
             state=state
         )
+        logger.info(f"A2A message sent. Total A2A messages in state: {len(state.get('a2a_messages', []))}")
     
     return state
 
