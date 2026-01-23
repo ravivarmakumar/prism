@@ -120,6 +120,7 @@ class PRISMAgent:
                 logger.info("Created new state (first message in thread)")
             
             # Run the graph - use invoke for proper checkpointing
+            # Note: For real-time dashboard updates, we'll poll state during processing
             # LangGraph will automatically save state to checkpoint after invoke
             final_state = self.graph.invoke(initial_state, config=config)
             
@@ -127,6 +128,8 @@ class PRISMAgent:
             
             # Extract final state - invoke returns the final state directly
             last_node_state = final_state
+            
+            logger.info(f"Graph execution completed. Final state keys: {list(last_node_state.keys()) if isinstance(last_node_state, dict) else 'Not a dict'}")
             
             # Check if we need follow-up questions
             if last_node_state.get("is_vague") and last_node_state.get("follow_up_questions"):

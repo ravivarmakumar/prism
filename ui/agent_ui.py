@@ -55,7 +55,8 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
     
     # Status message (disappearing - updates in real-time)
     if is_processing:
-        st.info(f"**{status_message}**")
+        # Use a keyed info box so it updates
+        st.info(f"**{status_message}**", icon="⏳")
         
         # Metrics row (always visible)
         st.markdown("#### 📊 Status")

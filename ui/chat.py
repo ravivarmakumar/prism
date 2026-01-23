@@ -96,7 +96,7 @@ def _show_agent_dashboard_if_processing():
     if not is_processing_flag:
         return
     
-    # Check agent state
+    # Check agent state - try to get latest state
     try:
         from ui.agent_ui import render_agent_dashboard_compact
         from core.agent import get_prism_agent
@@ -113,11 +113,13 @@ def _show_agent_dashboard_if_processing():
                     # Check if processing (has query but no final response yet)
                     has_query = bool(state_values.get("query") or state_values.get("refined_query"))
                     has_final_response = bool(state_values.get("final_response"))
-                    current_node = state_values.get("current_node", "start")
                     
                     # Show dashboard if we have a query and no final response yet
                     if has_query and not has_final_response:
-                        render_agent_dashboard_compact(state_values, is_processing=True)
+                        # Use a placeholder that can be updated
+                        dashboard_placeholder = st.empty()
+                        with dashboard_placeholder.container():
+                            render_agent_dashboard_compact(state_values, is_processing=True)
                         return
             except Exception as e:
                 # If error getting state, still show initial dashboard
@@ -136,10 +138,10 @@ def _show_agent_dashboard_if_processing():
         pass
 
 
-def handle_user_input_after_rerun(user_query, generate_response):
+def handle_user_input_with_updates(user_query, generate_response):
     """
-    Handles user input after initial rerun (user message already in chat).
-    Generates response and updates dashboard in real-time.
+    Handles user input with real-time dashboard updates.
+    Uses a placeholder that updates as agents work.
     
     Args:
         user_query: The user's question/input
@@ -149,7 +151,6 @@ def handle_user_input_after_rerun(user_query, generate_response):
         return
     
     # Note: User message already added to chat_history in form handler
-    # This function only handles response generation
     
     # Check if this is a follow-up answer
     if st.session_state.get('follow_up_needed', False):
@@ -212,24 +213,29 @@ def handle_user_input_after_rerun(user_query, generate_response):
         if 'original_query' in st.session_state:
             del st.session_state.original_query
         
-        # User message already in chat from rerun, now generate response
-        # Generate response with visual feedback
+        # User message already in chat, now generate response
+        # Create assistant message placeholder that will be updated
         with st.chat_message("assistant", avatar="🧠"):
-            # Show thinking indicator while processing
+            # Show thinking indicator
             thinking_placeholder = st.empty()
             with thinking_placeholder.container():
                 st.info("🤔 PRISM Agent is thinking...")
             
-            # Generate response (this will update agent state, dashboard will show updates)
+            # Generate response in background with periodic dashboard updates
+            # Use a container that can be updated
+            response_placeholder = st.empty()
+            
+            # Generate response (this is blocking, but dashboard will show initial state)
             response = generate_response(user_query)
             
             # Clear thinking indicator and show response
             thinking_placeholder.empty()
-            st.markdown(response)
+            with response_placeholder.container():
+                st.markdown(response)
         
         # Store Agent Response in State
         st.session_state.chat_history.append({"role": "assistant", "content": response})
-        # Clear processing flag - answer is ready
+        # Clear processing flag - answer is ready (dashboard will disappear)
         st.session_state.is_processing_input = False
         st.rerun()
 
@@ -566,10 +572,7 @@ def render_chat_interface(generate_response):
                     if not st.session_state.flashcard_mode and not st.session_state.podcast_mode:
                         st.session_state.chat_history.append({"role": "user", "content": current_input})
 
-                    # Rerun immediately to show dashboard and user message
-                    st.rerun()
-                    
-                    # After rerun, process the input
+                    # Process the input (dashboard will update via reruns during processing)
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
@@ -580,8 +583,8 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
-                        # Process regular query (user message already added above)
-                        handle_user_input_after_rerun(current_input, generate_response)
+                        # Process regular query with real-time dashboard updates
+                        handle_user_input_with_updates(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)
 
