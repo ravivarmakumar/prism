@@ -290,11 +290,11 @@ def render_chat_interface(generate_response):
     # Main chat area - no header, just chat
     display_chat_history()
     
-    # Agent Dashboard - ALWAYS SHOW when session is active (AG-UI and A2A are always active)
+    # Agent Dashboard - Show compact version below search box when processing
     if st.session_state.user_context.get('is_ready'):
         try:
-            from ui.agent_ui import render_agent_dashboard
-            from app import get_prism_agent
+            from ui.agent_ui import render_agent_dashboard_compact
+            from core.agent import get_prism_agent
             
             agent = get_prism_agent()
             if agent and agent.graph:
@@ -304,38 +304,23 @@ def render_chat_interface(generate_response):
                     current_state = agent.graph.get_state(config)
                     
                     if current_state and current_state.values:
-                        # State exists - show full dashboard
-                        render_agent_dashboard(current_state.values, show_details=True)
-                    else:
-                        # No state yet - show initial/empty dashboard
-                        from core.state import AgentState
-                        initial_state: Dict[str, Any] = {
-                            "current_node": "start",
-                            "is_vague": False,
-                            "is_relevant": False,
-                            "course_content_found": False,
-                            "evaluation_passed": False,
-                            "a2a_messages": []
-                        }
-                        render_agent_dashboard(initial_state, show_details=False)
+                        state_values = current_state.values
+                        # Check if processing (has query but no final response yet, or still in progress)
+                        has_query = state_values.get("query") or state_values.get("refined_query")
+                        has_final_response = bool(state_values.get("final_response"))
+                        current_node = state_values.get("current_node", "start")
+                        is_processing = has_query and (not has_final_response or current_node not in ["end", "start"])
+                        
+                        # Only show dashboard if processing
+                        if is_processing:
+                            render_agent_dashboard_compact(state_values, is_processing=True)
                 except Exception as e:
-                    # Show error but still try to show something
-                    st.warning(f"Could not load agent state: {e}")
-                    # Show empty dashboard
-                    from ui.agent_ui import render_agent_dashboard
-                    initial_state = {
-                        "current_node": "start",
-                        "is_vague": False,
-                        "is_relevant": False,
-                        "course_content_found": False,
-                        "evaluation_passed": False,
-                        "a2a_messages": []
-                    }
-                    render_agent_dashboard(initial_state, show_details=False)
-        except ImportError as e:
-            st.error(f"Error importing agent UI: {e}")
-        except Exception as e:
-            st.error(f"Error displaying agent dashboard: {e}")
+                    # Silently fail - don't show error if state not available
+                    pass
+        except ImportError:
+            pass
+        except Exception:
+            pass
     
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
@@ -465,6 +450,35 @@ def render_chat_interface(generate_response):
                     if podcast_style != st.session_state.podcast_style:
                         st.session_state.podcast_style = podcast_style
                         st.rerun()
+        
+        # Show agent dashboard right below search box (before input form)
+        # This will appear when processing and disappear when done
+        try:
+            from ui.agent_ui import render_agent_dashboard_compact
+            from core.agent import get_prism_agent
+            
+            agent = get_prism_agent()
+            if agent and agent.graph:
+                try:
+                    thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+                    config = {"configurable": {"thread_id": thread_id}}
+                    current_state = agent.graph.get_state(config)
+                    
+                    if current_state and current_state.values:
+                        state_values = current_state.values
+                        # Check if processing (has query but no final response yet, or still in progress)
+                        has_query = state_values.get("query") or state_values.get("refined_query")
+                        has_final_response = bool(state_values.get("final_response"))
+                        current_node = state_values.get("current_node", "start")
+                        is_processing = has_query and (not has_final_response or current_node not in ["end", "start"])
+                        
+                        # Show compact dashboard if processing
+                        if is_processing:
+                            render_agent_dashboard_compact(state_values, is_processing=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
