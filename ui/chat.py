@@ -563,10 +563,7 @@ def render_chat_interface(generate_response):
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
 
-                    # Rerun immediately to show dashboard, then process
-                    st.rerun()
-                    
-                    # After rerun, process the input
+                    # Process the input (dashboard will show on next render)
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
