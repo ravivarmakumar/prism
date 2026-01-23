@@ -148,6 +148,9 @@ def handle_user_input_after_rerun(user_query, generate_response):
     if not user_query:
         return
     
+    # Note: User message already added to chat_history in form handler
+    # This function only handles response generation
+    
     # Check if this is a follow-up answer
     if st.session_state.get('follow_up_needed', False):
         # This is an answer to a follow-up question
@@ -167,8 +170,7 @@ def handle_user_input_after_rerun(user_query, generate_response):
             thread_id=thread_id
         )
         
-        # Store follow-up answer (without "Follow-up:" prefix for cleaner conversation)
-        st.session_state.chat_history.append({"role": "user", "content": user_query})
+        # Follow-up answer - user message already in chat from rerun, skip adding again
         
         # Check if still needs follow-up (conversational flow)
         if result.get("needs_follow_up"):
