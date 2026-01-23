@@ -38,18 +38,18 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
     current_node = state.get("current_node", "start")
     status_message = get_status_message(current_node, state)
     
-    # Create rounded container with border using Streamlit container
-    with st.container():
-        st.markdown("""
-        <div style='
-            border: 2px solid #00853C;
-            border-radius: 12px;
-            padding: 16px;
-            margin: 12px 0;
-            background-color: #f8f9fa;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        '>
-        """, unsafe_allow_html=True)
+    # Create rounded container with border
+    container_html = """
+    <div style='
+        border: 2px solid #00853C;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 12px 0;
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    '>
+    """
+    st.markdown(container_html, unsafe_allow_html=True)
     
     # Title
     st.markdown("### 🤖 Agent Dashboard")
@@ -120,9 +120,9 @@ def render_agent_dashboard_compact(state: Dict[str, Any], is_processing: bool = 
             
             # Show message with fade effect
             st.caption(f"🔄 {readable_msg} {time_display}")
-        
-        # Close container div
-        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Close container div
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_agent_flow_simple(state: Dict[str, Any]):
