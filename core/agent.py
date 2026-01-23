@@ -1,6 +1,7 @@
 """Main agent orchestrator for LangGraph-based agentic RAG system."""
 
 import logging
+import streamlit as st
 from typing import Dict, Any, Optional, List
 from core.state import create_initial_state, AgentState
 from core.graph import create_agent_graph
@@ -186,6 +187,17 @@ class PRISMAgent:
                 "is_relevant": None,
                 "citations": []
             }
+
+
+# Initialize PRISM agent (singleton pattern for Streamlit)
+@st.cache_resource
+def get_prism_agent():
+    """Get or create PRISM agent instance."""
+    try:
+        return PRISMAgent()
+    except Exception as e:
+        logger.error(f"Error initializing PRISM agent: {e}")
+        return None
     
     def refine_query_with_follow_up(
         self,

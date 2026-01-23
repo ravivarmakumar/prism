@@ -294,7 +294,7 @@ def render_chat_interface(generate_response):
     if st.session_state.user_context.get('is_ready'):
         try:
             from ui.agent_ui import render_agent_dashboard
-            from core.agent import get_prism_agent
+            from app import get_prism_agent
             
             agent = get_prism_agent()
             if agent and agent.graph:

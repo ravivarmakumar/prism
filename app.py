@@ -4,21 +4,11 @@ from pathlib import Path
 
 # Import UI components
 from ui import styling, sidebar, chat, session
-from core.agent import PRISMAgent
+from core.agent import PRISMAgent, get_prism_agent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize PRISM agent (singleton pattern for Streamlit)
-@st.cache_resource
-def get_prism_agent():
-    """Get or create PRISM agent instance."""
-    try:
-        return PRISMAgent()
-    except Exception as e:
-        logger.error(f"Error initializing PRISM agent: {e}")
-        return None
 
 
 def get_available_courses():
