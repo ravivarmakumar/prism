@@ -54,7 +54,8 @@ class PodcastGenerator:
         self,
         context: str,
         topic: str,
-        style: str = "conversational"
+        style: str = "conversational",
+        user_context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Generate a conversational podcast script using LLM.
@@ -67,6 +68,21 @@ class PodcastGenerator:
         Returns:
             Formatted script for TTS generation
         """
+        # Build personalization context
+        personalization_note = ""
+        if user_context:
+            degree = user_context.get('degree', '')
+            major = user_context.get('major', '')
+            if degree or major:
+                personalization_note = f"""
+PERSONALIZATION: Tailor the content to the student's background:
+- Degree Level: {degree}
+- Major/Field: {major}
+- Use examples and analogies relevant to their field of study
+- Adjust complexity and terminology based on their degree level
+- Connect concepts to applications in their major when possible
+- Make the content relatable to their academic background"""
+        
         style_instructions = {
             "conversational": """Create a natural, friendly conversation between two hosts discussing the topic.
 - Host 1 (Alex): The primary explainer, knowledgeable and enthusiastic
@@ -74,23 +90,17 @@ class PodcastGenerator:
 - Keep the tone casual but informative, like NotebookLM
 - Use natural conversational fillers like "So...", "Right!", "That makes sense"
 - Break down complex concepts into digestible parts
-- Use analogies and examples to make content relatable""",
-
-            "interview": """Create an interview-style podcast.
-- Host (Interviewer): Asks probing questions to explore the topic
-- Guest (Expert): Provides detailed explanations and insights
-- Keep the tone professional but engaging
-- Host should guide the conversation and ask follow-up questions
-- Expert should provide comprehensive answers based on the content"""
+- Use analogies and examples to make content relatable"""
         }
 
         instruction = style_instructions.get(style, style_instructions["conversational"])
+        if personalization_note:
+            instruction += personalization_note
 
         system_prompt = f"""You are a podcast script writer. {instruction}
 
 Format the script with clear speaker labels:
 - Use "Alex:" and "Sam:" for conversational style
-- Use "Host:" and "Guest:" for interview style
 - Each line should be a natural, complete thought
 - Keep individual speaking segments to 2-3 sentences max
 - Ensure smooth transitions between speakers
@@ -143,18 +153,19 @@ Return ONLY the script with speaker labels, no additional commentary."""
             logger.error(f"Error generating podcast script: {e}", exc_info=True)
             return ""
 
-    def _parse_script(self, script: str, style: str) -> List[Tuple[str, str]]:
+    def _parse_script(self, script: str, style: str = "conversational") -> List[Tuple[str, str]]:
         """
         Parse the script into speaker-dialogue pairs.
         
         Args:
             script: The podcast script with speaker labels
-            style: Podcast style (conversational or interview)
+            style: Podcast style (always conversational now)
             
         Returns:
             List of (speaker, dialogue) tuples
         """
         lines = []
+        # Only conversational style now
         if style == "conversational":
             # More flexible patterns: "Alex:", "Sam:", or variations
             patterns = [
@@ -269,13 +280,9 @@ Return ONLY the script with speaker labels, no additional commentary."""
         try:
             logger.info("Attempting MCP fallback for audio generation...")
             
-            # Voice selection for MCP
-            if style == "conversational":
-                voice1 = "default"  # Alex (Host 1)
-                voice2 = "default"  # Sam (Host 2)
-            else:  # interview
-                voice1 = "default"  # Interviewer
-                voice2 = "default"  # Expert
+            # Voice selection for MCP (always conversational)
+            voice1 = "default"  # Alex (Host 1)
+            voice2 = "default"  # Sam (Host 2)
             
             # Run async MCP call
             loop = asyncio.new_event_loop()
@@ -464,7 +471,8 @@ Return ONLY the script with speaker labels, no additional commentary."""
         topic: str,
         course_name: str,
         session_id: str,
-        style: str = "conversational"
+        style: str = "conversational",
+        user_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Generate a podcast for a given topic.
@@ -508,12 +516,13 @@ Return ONLY the script with speaker labels, no additional commentary."""
             # Format context from retrieved chunks
             context = self.retriever.format_context(retrieved_chunks)
 
-            # Generate conversational script
+            # Generate conversational script with user context for personalization
             logger.info("Generating podcast script...")
             script = self._create_conversational_script(
                 context=context,
                 topic=topic,
-                style=style
+                style=style,
+                user_context=user_context
             )
 
             if not script:
@@ -584,7 +593,7 @@ Return ONLY the script with speaker labels, no additional commentary."""
             logger.warning(f"Failed to cleanup audio file {audio_path}: {e}")
 
 
-def run_async_podcast_generation(topic: str, course_name: str, session_id: str, style: str = "conversational") -> Dict[str, Any]:
+def run_async_podcast_generation(topic: str, course_name: str, session_id: str, style: str = "conversational", user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Synchronous wrapper for async podcast generation.
 
@@ -608,7 +617,7 @@ def run_async_podcast_generation(topic: str, course_name: str, session_id: str, 
 
     try:
         result = loop.run_until_complete(
-            generator.generate_podcast(topic, course_name, session_id, style)
+            generator.generate_podcast(topic, course_name, session_id, style, user_context)
         )
         return result
     finally:

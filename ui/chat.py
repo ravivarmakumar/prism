@@ -314,12 +314,13 @@ def render_chat_interface(generate_response):
                 # Generate unique session ID for this podcast
                 session_id = str(uuid.uuid4())[:8]
 
-                # Run podcast generation
+                # Run podcast generation with user context for personalization
                 result = run_async_podcast_generation(
                     topic=topic,
                     course_name=st.session_state.user_context.get('course'),
                     session_id=session_id,
-                    style=style
+                    style=style,
+                    user_context=st.session_state.user_context
                 )
 
                 # Remove the "generating" message from chat history
@@ -477,18 +478,9 @@ def render_chat_interface(generate_response):
                         st.session_state.flashcard_mode = False
                     st.rerun()
 
-                # Show podcast style selector if podcast mode is active
+                # Podcast style is always conversational (no selector needed)
                 if st.session_state.podcast_mode:
-                    podcast_style = st.radio(
-                        "Podcast Style:",
-                        options=["conversational", "interview"],
-                        index=0 if st.session_state.podcast_style == "conversational" else 1,
-                        key="podcast_style_radio",
-                        horizontal=True
-                    )
-                    if podcast_style != st.session_state.podcast_style:
-                        st.session_state.podcast_style = podcast_style
-                        st.rerun()
+                    st.session_state.podcast_style = "conversational"
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
