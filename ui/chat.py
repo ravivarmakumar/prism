@@ -203,11 +203,18 @@ def handle_flashcard_generation(topic: str):
         if msg.get("role") == "assistant" and msg.get("flashcards"):
             all_existing_flashcards.extend(msg.get("flashcards", []))
 
-    # Add user message to chat
+    # Add user message to chat (show the actual question they asked)
     st.session_state.chat_history.append({
         "role": "user",
-        "content": f"Generate flashcards for: {topic}"
+        "content": topic  # Show the actual topic/question
     })
+
+    # Show generating message in chat
+    generating_msg = {
+        "role": "assistant",
+        "content": "Generating flashcards... This may take a moment. 📚"
+    }
+    st.session_state.chat_history.append(generating_msg)
 
     # Generate flashcards
     with st.chat_message("assistant", avatar="🧠"):
@@ -219,6 +226,10 @@ def handle_flashcard_generation(topic: str):
                 existing_flashcards=all_existing_flashcards,
                 num_flashcards=5
             )
+
+            # Remove the "generating" message from chat history
+            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                st.session_state.chat_history.pop()
 
             if result['flashcards']:
                 # Show response
@@ -258,11 +269,18 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
     # Store topic
     st.session_state.podcast_topic = topic
 
-    # Add user message to chat
+    # Add user message to chat (show the actual question they asked)
     st.session_state.chat_history.append({
         "role": "user",
-        "content": f"Generate podcast for: {topic}"
+        "content": topic  # Show the actual topic/question
     })
+
+    # Show generating message in chat
+    generating_msg = {
+        "role": "assistant",
+        "content": "Generating podcast... This may take a minute. 🎙️"
+    }
+    st.session_state.chat_history.append(generating_msg)
 
     # Generate podcast
     with st.chat_message("assistant", avatar="🧠"):
@@ -277,6 +295,10 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
                 session_id=session_id,
                 style=st.session_state.get('podcast_style', 'conversational')
             )
+
+            # Remove the "generating" message from chat history
+            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                st.session_state.chat_history.pop()
 
             if result['success'] and result['audio_path']:
                 # Show response
