@@ -63,7 +63,7 @@ class PodcastGenerator:
         Args:
             context: Retrieved course content
             topic: The topic for the podcast
-            style: Style of podcast (conversational or interview)
+            style: Style of podcast (always conversational)
 
         Returns:
             Formatted script for TTS generation
@@ -367,9 +367,9 @@ Return ONLY the script with speaker labels, no additional commentary."""
             if style == "conversational":
                 voice1 = "nova"  # Alex (Host 1) - friendly, warm
                 voice2 = "echo"  # Sam (Host 2) - clear, engaging
-            else:  # interview
-                voice1 = "onyx"  # Host (Interviewer) - professional
-                voice2 = "shimmer"  # Guest (Expert) - knowledgeable
+            # Always conversational style
+            voice1 = "nova"  # Alex (Host 1) - friendly, warm
+            voice2 = "echo"  # Sam (Host 2) - clear, engaging
 
             # Parse script into speaker-dialogue pairs
             logger.info(f"Parsing script (first 200 chars): {script[:200]}...")
@@ -460,7 +460,7 @@ Return ONLY the script with speaker labels, no additional commentary."""
             topic: The topic/question for the podcast
             course_name: Name of the course
             session_id: Session ID for unique file naming
-            style: Style of podcast (conversational or interview)
+            style: Style of podcast (always conversational)
 
         Returns:
             Dictionary with audio_path, script, and status/message
