@@ -265,13 +265,44 @@ def handle_flashcard_generation(topic: str):
 
 
 def handle_podcast_generation(topic: str, style: str = "conversational"):
-    """Handle podcast generation request."""
-    from core.podcast_generator import run_async_podcast_generation
-    import uuid
+    """Handle podcast generation request - sets up state and triggers rerun."""
+    # Store topic
+    st.session_state.podcast_topic = topic
 
-    # Check if we're continuing after rerun
+    # Add user message to chat (show the actual question they asked)
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": topic  # Show the actual topic/question
+    })
+
+    # Show generating message in chat with loading indicator
+    generating_msg = {
+        "role": "assistant",
+        "content": "🎙️ Generating podcast... This may take a minute. ⏳"
+    }
+    st.session_state.chat_history.append(generating_msg)
+
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._podcast_generating = True
+    st.session_state._podcast_generating_msg = generating_msg
+    st.session_state._podcast_topic = topic
+    st.session_state._podcast_style = style
+
+    # Rerun immediately to show user message and generating message
+    # Generation will continue in render_chat_interface on next render
+    st.rerun()
+
+
+def render_chat_interface(generate_response):
+    """Renders the main chat interface."""
+    # Main chat area - no header, just chat
+    display_chat_history()
+    
+    # Check if we need to continue podcast generation after rerun
     if st.session_state.get('_podcast_generating'):
-        # We're in the generation phase after rerun
+        from core.podcast_generator import run_async_podcast_generation
+        import uuid
+        
         generating_msg = st.session_state.get('_podcast_generating_msg')
         topic = st.session_state.get('_podcast_topic')
         style = st.session_state.get('_podcast_style', 'conversational')
@@ -332,38 +363,6 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
         st.session_state.is_processing_input = False
         st.rerun()
         return
-
-    # Initial phase - add messages and trigger rerun
-    # Store topic
-    st.session_state.podcast_topic = topic
-
-    # Add user message to chat (show the actual question they asked)
-    st.session_state.chat_history.append({
-        "role": "user",
-        "content": topic  # Show the actual topic/question
-    })
-
-    # Show generating message in chat with loading indicator
-    generating_msg = {
-        "role": "assistant",
-        "content": "🎙️ Generating podcast... This may take a minute. ⏳"
-    }
-    st.session_state.chat_history.append(generating_msg)
-
-    # Store state for continuation after rerun
-    st.session_state._podcast_generating = True
-    st.session_state._podcast_generating_msg = generating_msg
-    st.session_state._podcast_topic = topic
-    st.session_state._podcast_style = style
-
-    # Rerun immediately to show user message and generating message
-    st.rerun()
-
-
-def render_chat_interface(generate_response):
-    """Renders the main chat interface."""
-    # Main chat area - no header, just chat
-    display_chat_history()
     
     # Note: AG-UI removed. A2A and MCP are still active in the background.
     
