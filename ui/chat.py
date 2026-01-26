@@ -427,44 +427,44 @@ def render_chat_interface(generate_response):
                 st.markdown("---")
                 st.markdown("**Options:**")
 
-                    # Flashcard option
-                    flashcard_mode = st.checkbox(
-                        "📚 Generate Flashcards",
-                        value=st.session_state.flashcard_mode,
-                        key="flashcard_option_checkbox"
-                    )
-                    if flashcard_mode != st.session_state.flashcard_mode:
-                        st.session_state.flashcard_mode = flashcard_mode
-                        # Disable podcast mode if flashcard is enabled
-                        if flashcard_mode:
-                            st.session_state.podcast_mode = False
-                        st.rerun()
+                # Flashcard option
+                flashcard_mode = st.checkbox(
+                    "📚 Generate Flashcards",
+                    value=st.session_state.flashcard_mode,
+                    key="flashcard_option_checkbox"
+                )
+                if flashcard_mode != st.session_state.flashcard_mode:
+                    st.session_state.flashcard_mode = flashcard_mode
+                    # Disable podcast mode if flashcard is enabled
+                    if flashcard_mode:
+                        st.session_state.podcast_mode = False
+                    st.rerun()
 
-                    # Podcast option
-                    podcast_mode = st.checkbox(
-                        "🎙️ Generate Podcast",
-                        value=st.session_state.podcast_mode,
-                        key="podcast_option_checkbox"
-                    )
-                    if podcast_mode != st.session_state.podcast_mode:
-                        st.session_state.podcast_mode = podcast_mode
-                        # Disable flashcard mode if podcast is enabled
-                        if podcast_mode:
-                            st.session_state.flashcard_mode = False
-                        st.rerun()
+                # Podcast option
+                podcast_mode = st.checkbox(
+                    "🎙️ Generate Podcast",
+                    value=st.session_state.podcast_mode,
+                    key="podcast_option_checkbox"
+                )
+                if podcast_mode != st.session_state.podcast_mode:
+                    st.session_state.podcast_mode = podcast_mode
+                    # Disable flashcard mode if podcast is enabled
+                    if podcast_mode:
+                        st.session_state.flashcard_mode = False
+                    st.rerun()
 
-                    # Show podcast style selector if podcast mode is active
-                    if st.session_state.podcast_mode:
-                        podcast_style = st.radio(
-                            "Podcast Style:",
-                            options=["conversational", "interview"],
-                            index=0 if st.session_state.podcast_style == "conversational" else 1,
-                            key="podcast_style_radio",
-                            horizontal=True
-                        )
-                        if podcast_style != st.session_state.podcast_style:
-                            st.session_state.podcast_style = podcast_style
-                            st.rerun()
+                # Show podcast style selector if podcast mode is active
+                if st.session_state.podcast_mode:
+                    podcast_style = st.radio(
+                        "Podcast Style:",
+                        options=["conversational", "interview"],
+                        index=0 if st.session_state.podcast_style == "conversational" else 1,
+                        key="podcast_style_radio",
+                        horizontal=True
+                    )
+                    if podcast_style != st.session_state.podcast_style:
+                        st.session_state.podcast_style = podcast_style
+                        st.rerun()
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
