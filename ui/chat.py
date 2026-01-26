@@ -85,63 +85,13 @@ def display_chat_history():
                     display_podcast_player(podcast)
 
 
-def _show_agent_dashboard_if_processing():
-    """Show agent dashboard if currently processing a query."""
-    if not st.session_state.user_context.get('is_ready'):
-        return
-    
-    # Check if we're processing (user just submitted but no response yet)
-    is_processing_flag = st.session_state.get('is_processing_input', False)
-    
-    if not is_processing_flag:
-        return
-    
-    # Check agent state - try to get latest state
-    try:
-        from ui.agent_ui import render_agent_dashboard_compact
-        from core.agent import get_prism_agent
-        
-        agent = get_prism_agent()
-        if agent and agent.graph:
-            try:
-                thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-                config = {"configurable": {"thread_id": thread_id}}
-                current_state = agent.graph.get_state(config)
-                
-                if current_state and current_state.values:
-                    state_values = current_state.values
-                    # Check if processing (has query but no final response yet)
-                    has_query = bool(state_values.get("query") or state_values.get("refined_query"))
-                    has_final_response = bool(state_values.get("final_response"))
-                    
-                    # Show dashboard if we have a query and no final response yet
-                    if has_query and not has_final_response:
-                        # Use a placeholder that can be updated
-                        dashboard_placeholder = st.empty()
-                        with dashboard_placeholder.container():
-                            render_agent_dashboard_compact(state_values, is_processing=True)
-                        return
-            except Exception as e:
-                # If error getting state, still show initial dashboard
-                pass
-        
-        # If state not available yet but we're processing, show initial dashboard
-        initial_state = {
-            "current_node": "start",
-            "is_vague": False,
-            "is_relevant": False,
-            "course_content_found": False,
-            "a2a_messages": []
-        }
-        render_agent_dashboard_compact(initial_state, is_processing=True)
-    except Exception:
-        pass
+# AG-UI removed - keeping A2A and MCP only
 
 
 def handle_user_input_with_updates(user_query, generate_response):
     """
-    Handles user input with real-time dashboard updates.
-    Uses a placeholder that updates as agents work.
+    Handles user input and generates response.
+    A2A messages are created automatically in the background.
     
     Args:
         user_query: The user's question/input
@@ -235,7 +185,7 @@ def handle_user_input_with_updates(user_query, generate_response):
         
         # Store Agent Response in State
         st.session_state.chat_history.append({"role": "assistant", "content": response})
-        # Clear processing flag - answer is ready (dashboard will disappear)
+        # Clear processing flag - answer is ready
         st.session_state.is_processing_input = False
         st.rerun()
 
@@ -360,8 +310,7 @@ def render_chat_interface(generate_response):
     # Main chat area - no header, just chat
     display_chat_history()
     
-    # Show agent dashboard if processing (appears below chat history, above input)
-    _show_agent_dashboard_if_processing()
+    # Note: AG-UI removed. A2A and MCP are still active in the background.
     
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
@@ -562,7 +511,7 @@ def render_chat_interface(generate_response):
                     # Update last input value to track form submissions
                     st.session_state.last_input_value = current_input
 
-                    # Set processing flag IMMEDIATELY so dashboard shows right away
+                    # Set processing flag (for tracking, not for UI)
                     st.session_state.is_processing_input = True
 
                     # Close options panel when submitting
@@ -572,10 +521,7 @@ def render_chat_interface(generate_response):
                     if not st.session_state.flashcard_mode and not st.session_state.podcast_mode:
                         st.session_state.chat_history.append({"role": "user", "content": current_input})
 
-                    # Rerun immediately to show dashboard and user message
-                    st.rerun()
-                    
-                    # After rerun, process the input
+                    # Process the input (A2A and MCP work in background)
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
@@ -586,7 +532,7 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
-                        # Process regular query (user message already added above)
+                        # Process regular query
                         handle_user_input_with_updates(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)

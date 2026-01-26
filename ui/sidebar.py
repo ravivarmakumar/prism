@@ -77,9 +77,9 @@ def render_sidebar(course_options, degree_options, handle_start_session):
                 reset_session()
                 st.rerun()
             
-            # Note: AG-UI and A2A are always active
+            # Note: A2A and MCP are always active
             st.markdown("---")
-            st.info("🤖 **AG-UI & A2A**: Always active. Agent dashboard appears below chat.")
+            st.info("🤖 **A2A & MCP**: Always active in the background.")
         else:
             # Input Form - fields are enabled when session is not active
             # They will be disabled once session starts (handled by session state)
