@@ -269,6 +269,71 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
     from core.podcast_generator import run_async_podcast_generation
     import uuid
 
+    # Check if we're continuing after rerun
+    if st.session_state.get('_podcast_generating'):
+        # We're in the generation phase after rerun
+        generating_msg = st.session_state.get('_podcast_generating_msg')
+        topic = st.session_state.get('_podcast_topic')
+        style = st.session_state.get('_podcast_style', 'conversational')
+        
+        # Generate podcast with visible spinner
+        with st.chat_message("assistant", avatar="🧠"):
+            # Show loading indicator with spinner
+            with st.spinner("🎙️ Generating podcast audio... This may take a minute."):
+                # Generate unique session ID for this podcast
+                session_id = str(uuid.uuid4())[:8]
+
+                # Run podcast generation
+                result = run_async_podcast_generation(
+                    topic=topic,
+                    course_name=st.session_state.user_context.get('course'),
+                    session_id=session_id,
+                    style=style
+                )
+
+                # Remove the "generating" message from chat history
+                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                    st.session_state.chat_history.pop()
+
+                if result['success'] and result['audio_path']:
+                    # Show response
+                    response = f"Generated podcast for '{topic}'! 🎙️"
+                    st.markdown(response)
+
+                    # Store assistant response with podcast attached
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "podcast": {
+                            "audio_path": result['audio_path'],
+                            "script": result.get('script'),
+                            "topic": topic
+                        }
+                    })
+                else:
+                    error_msg = result.get('message', 'Could not generate podcast. Please try a different topic.')
+                    st.markdown(error_msg)
+                    # Store assistant response without podcast
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": error_msg
+                    })
+
+        # Clear flags
+        st.session_state._podcast_generating = False
+        if '_podcast_generating_msg' in st.session_state:
+            del st.session_state._podcast_generating_msg
+        if '_podcast_topic' in st.session_state:
+            del st.session_state._podcast_topic
+        if '_podcast_style' in st.session_state:
+            del st.session_state._podcast_style
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+
+    # Initial phase - add messages and trigger rerun
     # Store topic
     st.session_state.podcast_topic = topic
 
@@ -278,60 +343,20 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
         "content": topic  # Show the actual topic/question
     })
 
-    # Show generating message in chat
+    # Show generating message in chat with loading indicator
     generating_msg = {
         "role": "assistant",
-        "content": "Generating podcast... This may take a minute. 🎙️"
+        "content": "🎙️ Generating podcast... This may take a minute. ⏳"
     }
     st.session_state.chat_history.append(generating_msg)
 
+    # Store state for continuation after rerun
+    st.session_state._podcast_generating = True
+    st.session_state._podcast_generating_msg = generating_msg
+    st.session_state._podcast_topic = topic
+    st.session_state._podcast_style = style
+
     # Rerun immediately to show user message and generating message
-    st.rerun()
-    
-    # After rerun, generate podcast
-    with st.chat_message("assistant", avatar="🧠"):
-        with st.spinner("Generating podcast... This may take a minute."):
-            # Generate unique session ID for this podcast
-            session_id = str(uuid.uuid4())[:8]
-
-            # Run podcast generation
-            result = run_async_podcast_generation(
-                topic=topic,
-                course_name=st.session_state.user_context.get('course'),
-                session_id=session_id,
-                style=st.session_state.get('podcast_style', 'conversational')
-            )
-
-            # Remove the "generating" message from chat history
-            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
-                st.session_state.chat_history.pop()
-
-            if result['success'] and result['audio_path']:
-                # Show response
-                response = f"Generated podcast for '{topic}'! 🎙️"
-                st.markdown(response)
-
-                # Store assistant response with podcast attached
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": response,
-                    "podcast": {
-                        "audio_path": result['audio_path'],
-                        "script": result.get('script'),
-                        "topic": topic
-                    }
-                })
-            else:
-                error_msg = result.get('message', 'Could not generate podcast. Please try a different topic.')
-                st.markdown(error_msg)
-                # Store assistant response without podcast
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": error_msg
-                })
-
-    # Clear processing flag when done
-    st.session_state.is_processing_input = False
     st.rerun()
 
 
