@@ -216,7 +216,10 @@ def handle_flashcard_generation(topic: str):
     }
     st.session_state.chat_history.append(generating_msg)
 
-    # Generate flashcards
+    # Rerun immediately to show user message and generating message
+    st.rerun()
+    
+    # After rerun, generate flashcards
     with st.chat_message("assistant", avatar="🧠"):
         with st.spinner("Generating flashcards..."):
             generator = FlashcardGenerator()
@@ -256,13 +259,13 @@ def handle_flashcard_generation(topic: str):
                     "content": error_msg
                 })
 
+    # Clear processing flag when done
+    st.session_state.is_processing_input = False
     st.rerun()
 
 
 def handle_podcast_generation(topic: str, style: str = "conversational"):
     """Handle podcast generation request."""
-    # Clear processing flag when done
-    st.session_state.is_processing_input = False
     from core.podcast_generator import run_async_podcast_generation
     import uuid
 
@@ -282,7 +285,10 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
     }
     st.session_state.chat_history.append(generating_msg)
 
-    # Generate podcast
+    # Rerun immediately to show user message and generating message
+    st.rerun()
+    
+    # After rerun, generate podcast
     with st.chat_message("assistant", avatar="🧠"):
         with st.spinner("Generating podcast... This may take a minute."):
             # Generate unique session ID for this podcast
@@ -324,6 +330,8 @@ def handle_podcast_generation(topic: str, style: str = "conversational"):
                     "content": error_msg
                 })
 
+    # Clear processing flag when done
+    st.session_state.is_processing_input = False
     st.rerun()
 
 
@@ -413,12 +421,11 @@ def render_chat_interface(generate_response):
         
         # Show options popover OUTSIDE the form (only when plus was clicked)
         # This ensures it's visible and doesn't get hidden during form submission
-        if st.session_state.show_flashcard_options:
-            # Only show options if not currently generating
-            if not st.session_state.is_processing_input:
-                with st.container():
-                    st.markdown("---")
-                    st.markdown("**Options:**")
+        # Hide options when processing (podcast/flashcard generation in progress)
+        if st.session_state.show_flashcard_options and not st.session_state.is_processing_input:
+            with st.container():
+                st.markdown("---")
+                st.markdown("**Options:**")
 
                     # Flashcard option
                     flashcard_mode = st.checkbox(
