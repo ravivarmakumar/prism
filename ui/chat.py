@@ -392,48 +392,50 @@ def render_chat_interface(generate_response):
         # Show options popover OUTSIDE the form (only when plus was clicked)
         # This ensures it's visible and doesn't get hidden during form submission
         if st.session_state.show_flashcard_options:
-            with st.container():
-                st.markdown("---")
-                st.markdown("**Options:**")
+            # Only show options if not currently generating
+            if not st.session_state.is_processing_input:
+                with st.container():
+                    st.markdown("---")
+                    st.markdown("**Options:**")
 
-                # Flashcard option
-                flashcard_mode = st.checkbox(
-                    "📚 Generate Flashcards",
-                    value=st.session_state.flashcard_mode,
-                    key="flashcard_option_checkbox"
-                )
-                if flashcard_mode != st.session_state.flashcard_mode:
-                    st.session_state.flashcard_mode = flashcard_mode
-                    # Disable podcast mode if flashcard is enabled
-                    if flashcard_mode:
-                        st.session_state.podcast_mode = False
-                    st.rerun()
-
-                # Podcast option
-                podcast_mode = st.checkbox(
-                    "🎙️ Generate Podcast",
-                    value=st.session_state.podcast_mode,
-                    key="podcast_option_checkbox"
-                )
-                if podcast_mode != st.session_state.podcast_mode:
-                    st.session_state.podcast_mode = podcast_mode
-                    # Disable flashcard mode if podcast is enabled
-                    if podcast_mode:
-                        st.session_state.flashcard_mode = False
-                    st.rerun()
-
-                # Show podcast style selector if podcast mode is active
-                if st.session_state.podcast_mode:
-                    podcast_style = st.radio(
-                        "Podcast Style:",
-                        options=["conversational", "interview"],
-                        index=0 if st.session_state.podcast_style == "conversational" else 1,
-                        key="podcast_style_radio",
-                        horizontal=True
+                    # Flashcard option
+                    flashcard_mode = st.checkbox(
+                        "📚 Generate Flashcards",
+                        value=st.session_state.flashcard_mode,
+                        key="flashcard_option_checkbox"
                     )
-                    if podcast_style != st.session_state.podcast_style:
-                        st.session_state.podcast_style = podcast_style
+                    if flashcard_mode != st.session_state.flashcard_mode:
+                        st.session_state.flashcard_mode = flashcard_mode
+                        # Disable podcast mode if flashcard is enabled
+                        if flashcard_mode:
+                            st.session_state.podcast_mode = False
                         st.rerun()
+
+                    # Podcast option
+                    podcast_mode = st.checkbox(
+                        "🎙️ Generate Podcast",
+                        value=st.session_state.podcast_mode,
+                        key="podcast_option_checkbox"
+                    )
+                    if podcast_mode != st.session_state.podcast_mode:
+                        st.session_state.podcast_mode = podcast_mode
+                        # Disable flashcard mode if podcast is enabled
+                        if podcast_mode:
+                            st.session_state.flashcard_mode = False
+                        st.rerun()
+
+                    # Show podcast style selector if podcast mode is active
+                    if st.session_state.podcast_mode:
+                        podcast_style = st.radio(
+                            "Podcast Style:",
+                            options=["conversational", "interview"],
+                            index=0 if st.session_state.podcast_style == "conversational" else 1,
+                            key="podcast_style_radio",
+                            horizontal=True
+                        )
+                        if podcast_style != st.session_state.podcast_style:
+                            st.session_state.podcast_style = podcast_style
+                            st.rerun()
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
@@ -517,11 +519,8 @@ def render_chat_interface(generate_response):
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
 
-                    # Store user message immediately so it appears in chat
-                    if not st.session_state.flashcard_mode and not st.session_state.podcast_mode:
-                        st.session_state.chat_history.append({"role": "user", "content": current_input})
-
                     # Process the input (A2A and MCP work in background)
+                    # Note: User message is added inside handle functions for flashcard/podcast
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
@@ -532,6 +531,8 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
+                        # Store user message for regular queries
+                        st.session_state.chat_history.append({"role": "user", "content": current_input})
                         # Process regular query
                         handle_user_input_with_updates(current_input, generate_response)
     else:
