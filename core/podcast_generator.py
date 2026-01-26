@@ -166,23 +166,13 @@ Return ONLY the script with speaker labels, no additional commentary."""
         """
         lines = []
         # Only conversational style now
-        if style == "conversational":
-            # More flexible patterns: "Alex:", "Sam:", or variations
-            patterns = [
-                r'^(Alex|Sam):\s*(.+)$',  # Standard format
-                r'^(Alex|Sam)\s*:\s*(.+)$',  # With spaces around colon
-                r'^(Alex|Sam)\s+-\s*(.+)$',  # With dash
-            ]
-            speakers = ["Alex", "Sam"]
-        else:
-            # More flexible patterns for interview style
-            patterns = [
-                r'^(Host|Guest):\s*(.+)$',
-                r'^(Host|Guest)\s*:\s*(.+)$',
-                r'^(Host|Guest)\s+-\s*(.+)$',
-                r'^(Interviewer|Expert):\s*(.+)$',  # Alternative names
-            ]
-            speakers = ["Host", "Guest"]
+        # More flexible patterns: "Alex:", "Sam:", or variations
+        patterns = [
+            r'^(Alex|Sam):\s*(.+)$',  # Standard format
+            r'^(Alex|Sam)\s*:\s*(.+)$',  # With spaces around colon
+            r'^(Alex|Sam)\s+-\s*(.+)$',  # With dash
+        ]
+        speakers = ["Alex", "Sam"]
         
         current_speaker = None
         current_dialogue = []
@@ -213,22 +203,14 @@ Return ONLY the script with speaker labels, no additional commentary."""
                     speaker = match.group(1)
                     dialogue = match.group(2).strip() if len(match.groups()) >= 2 else ""
                     
-                    # Normalize speaker name
-                    if style == "conversational":
-                        if speaker.lower() in ["alex"]:
-                            current_speaker = "Alex"
-                        elif speaker.lower() in ["sam"]:
-                            current_speaker = "Sam"
-                        else:
-                            # Default to first speaker if unknown
-                            current_speaker = "Alex"
+                    # Normalize speaker name (always conversational)
+                    if speaker.lower() in ["alex", "host 1"]:
+                        current_speaker = "Alex"
+                    elif speaker.lower() in ["sam", "host 2"]:
+                        current_speaker = "Sam"
                     else:
-                        if speaker.lower() in ["host", "interviewer"]:
-                            current_speaker = "Host"
-                        elif speaker.lower() in ["guest", "expert"]:
-                            current_speaker = "Guest"
-                        else:
-                            current_speaker = "Host"
+                        # Default to first speaker if unknown
+                        current_speaker = "Alex"
                     
                     current_dialogue = [dialogue] if dialogue else []
                     matched = True
@@ -239,11 +221,8 @@ Return ONLY the script with speaker labels, no additional commentary."""
                 if current_speaker:
                     current_dialogue.append(line)
                 else:
-                    # No speaker identified yet, try to infer or use default
-                    if style == "conversational":
-                        current_speaker = "Alex"
-                    else:
-                        current_speaker = "Host"
+                    # No speaker identified yet, use default (Alex)
+                    current_speaker = "Alex"
                     current_dialogue = [line]
         
         # Save last dialogue
