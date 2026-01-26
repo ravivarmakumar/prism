@@ -362,12 +362,8 @@ Return ONLY the script with speaker labels, no additional commentary."""
             logger.info(f"Script length: {len(script)} characters")
             logger.info(f"Output path: {output_path}")
 
-            # Voice selection based on style
+            # Voice selection (always conversational style)
             # OpenAI TTS voices: alloy, echo, fable, onyx, nova, shimmer
-            if style == "conversational":
-                voice1 = "nova"  # Alex (Host 1) - friendly, warm
-                voice2 = "echo"  # Sam (Host 2) - clear, engaging
-            # Always conversational style
             voice1 = "nova"  # Alex (Host 1) - friendly, warm
             voice2 = "echo"  # Sam (Host 2) - clear, engaging
 
