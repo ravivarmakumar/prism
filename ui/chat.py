@@ -333,12 +333,14 @@ def render_chat_interface(generate_response):
             
             # Generate response with streaming
             with st.chat_message("assistant", avatar="🧠"):
-                # Remove the "generating" message from chat history
+                # Show spinner while generating response
+                with st.spinner("Processing your question..."):
+                    # Generate response
+                    response = generate_response(user_query)
+                
+                # Remove the "generating" message from chat history as soon as we start streaming
                 if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
                     st.session_state.chat_history.pop()
-                
-                # Generate response
-                response = generate_response(user_query)
                 
                 # Stream the response word by word for better UX
                 def stream_response(text):
