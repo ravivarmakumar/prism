@@ -326,6 +326,68 @@ def render_chat_interface(generate_response):
         st.rerun()
         return
     
+    # Check if we need to continue flashcard generation after rerun
+    if st.session_state.get('_flashcard_generating'):
+        from core.flashcard_generator import FlashcardGenerator
+        
+        generating_msg = st.session_state.get('_flashcard_generating_msg')
+        topic = st.session_state.get('_flashcard_topic')
+        existing_flashcards = st.session_state.get('_flashcard_existing', [])
+        
+        # Generate flashcards with visible spinner
+        with st.chat_message("assistant", avatar="🧠"):
+            with st.spinner("Generating flashcards..."):
+                generator = FlashcardGenerator()
+                result = generator.generate_flashcards(
+                    topic=topic,
+                    course_name=st.session_state.user_context.get('course'),
+                    existing_flashcards=existing_flashcards,
+                    num_flashcards=5
+                )
+
+                # Remove the "generating" message from chat history
+                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                    st.session_state.chat_history.pop()
+
+                if result['flashcards']:
+                    # Show response
+                    response = f"Generated {len(result['flashcards'])} flashcards for '{topic}'! 📚"
+                    if result['has_more']:
+                        response += " Click 'Generate 5 More' to get additional flashcards."
+                    else:
+                        response += " " + (result.get('message', '') or '')
+
+                    st.markdown(response)
+
+                    # Store assistant response with flashcards attached
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "flashcards": result['flashcards']
+                    })
+                else:
+                    error_msg = result.get('message', 'Could not generate flashcards. Please try a different topic.')
+                    st.markdown(error_msg)
+                    # Store assistant response without flashcards
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": error_msg
+                    })
+
+        # Clear flags
+        st.session_state._flashcard_generating = False
+        if '_flashcard_generating_msg' in st.session_state:
+            del st.session_state._flashcard_generating_msg
+        if '_flashcard_topic' in st.session_state:
+            del st.session_state._flashcard_topic
+        if '_flashcard_existing' in st.session_state:
+            del st.session_state._flashcard_existing
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+    
     # Note: AG-UI removed. A2A and MCP are still active in the background.
     
     # Check if we should show "Generate 5 More" button
