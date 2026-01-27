@@ -76,10 +76,6 @@ def render_sidebar(course_options, degree_options, handle_start_session):
             if st.button("End Session", use_container_width=True):
                 reset_session()
                 st.rerun()
-            
-            # Note: A2A and MCP are always active
-            st.markdown("---")
-            st.info("🤖 **A2A & MCP**: Always active in the background.")
         else:
             # Input Form - fields are enabled when session is not active
             # They will be disabled once session starts (handled by session state)
