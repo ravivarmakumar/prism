@@ -325,7 +325,6 @@ def render_chat_interface(generate_response):
             with st.chat_message("assistant", avatar="🧠"):
                 # Show spinner while generating response
                 spinner_placeholder = st.empty()
-                web_search_placeholder = st.empty()
                 
                 # Generate response with spinner
                 with spinner_placeholder.container():
