@@ -109,7 +109,7 @@ def handle_user_input_with_updates(user_query, generate_response):
     # Show generating message in chat with loading indicator
     generating_msg = {
         "role": "assistant",
-        "content": "🤔 Processing your question... This may take a moment. ⏳"
+        "content": "Processing your question..."
     }
     st.session_state.chat_history.append(generating_msg)
 
@@ -331,18 +331,37 @@ def render_chat_interface(generate_response):
             if 'original_query' in st.session_state:
                 del st.session_state.original_query
             
-            # Generate response with visible spinner
+            # Generate response with streaming
             with st.chat_message("assistant", avatar="🧠"):
-                with st.spinner("🤔 Processing your question..."):
-                    # Generate response
-                    response = generate_response(user_query)
-                    
-                    # Remove the "generating" message from chat history
-                    if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
-                        st.session_state.chat_history.pop()
-                    
-                    # Show response
-                    st.markdown(response)
+                # Remove the "generating" message from chat history
+                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                    st.session_state.chat_history.pop()
+                
+                # Generate response
+                response = generate_response(user_query)
+                
+                # Stream the response word by word for better UX
+                def stream_response(text):
+                    """Generator that yields text in chunks for streaming effect."""
+                    words = text.split(' ')
+                    for i, word in enumerate(words):
+                        if i == 0:
+                            yield word
+                        else:
+                            yield ' ' + word
+                        # Small delay for smoother streaming (optional)
+                        import time
+                        time.sleep(0.02)  # 20ms delay between words
+                
+                # Stream the response
+                response_placeholder = st.empty()
+                full_response = ""
+                for chunk in stream_response(response):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                
+                # Final update without cursor
+                response_placeholder.markdown(full_response)
             
             # Store Agent Response in State
             st.session_state.chat_history.append({"role": "assistant", "content": response})
