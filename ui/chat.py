@@ -324,34 +324,38 @@ def render_chat_interface(generate_response):
             # Generate response with streaming
             with st.chat_message("assistant", avatar="🧠"):
                 # Show spinner while generating response
-                # Check if web search will be used (we'll check state after generation)
-                with st.spinner("Processing your question..."):
-                    # Generate response
-                    response = generate_response(user_query)
-                    
-                    # Check if web search was used by checking agent state
-                    web_search_used = False
-                    try:
-                        from core.agent import get_prism_agent
-                        agent = get_prism_agent()
-                        if agent and agent.graph:
-                            thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-                            config = {"configurable": {"thread_id": thread_id}}
-                            current_state = agent.graph.get_state(config)
-                            if current_state and current_state.values:
-                                state_values = current_state.values
-                                # Check if web search was used (has web_search_results or used_web_search flag)
-                                web_search_used = bool(
-                                    state_values.get("web_search_results") or 
-                                    state_values.get("used_web_search", False) or
-                                    state_values.get("current_node") == "web_search"
-                                )
-                    except Exception:
-                        pass
+                spinner_placeholder = st.empty()
+                web_search_placeholder = st.empty()
                 
-                # Show web search indicator if web search was used
+                with spinner_placeholder.container():
+                    with st.spinner("Processing your question..."):
+                        # Generate response
+                        response = generate_response(user_query)
+                        
+                        # Check if web search was used by checking agent state
+                        web_search_used = False
+                        try:
+                            from core.agent import get_prism_agent
+                            agent = get_prism_agent()
+                            if agent and agent.graph:
+                                thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+                                config = {"configurable": {"thread_id": thread_id}}
+                                current_state = agent.graph.get_state(config)
+                                if current_state and current_state.values:
+                                    state_values = current_state.values
+                                    # Check if web search was used (has web_search_results or used_web_search flag)
+                                    web_search_used = bool(
+                                        state_values.get("web_search_results") or 
+                                        state_values.get("used_web_search", False) or
+                                        state_values.get("current_node") == "web_search"
+                                    )
+                        except Exception:
+                            pass
+                
+                # Clear spinner and show web search indicator if web search was used
+                spinner_placeholder.empty()
                 if web_search_used:
-                    st.info("🌐 Searching the internet for current information...")
+                    web_search_placeholder.info("🌐 Searching the internet for current information...")
                 
                 # Stream the response word by word for better UX
                 def stream_response(text):
