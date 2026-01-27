@@ -332,7 +332,7 @@ def render_chat_interface(generate_response):
                         # Generate response
                         response = generate_response(user_query)
                         
-                        # Check if web search was used by checking agent state
+                        # Check if web search was used by checking agent state and A2A messages
                         web_search_used = False
                         try:
                             from core.agent import get_prism_agent
@@ -343,13 +343,39 @@ def render_chat_interface(generate_response):
                                 current_state = agent.graph.get_state(config)
                                 if current_state and current_state.values:
                                     state_values = current_state.values
-                                    # Check if web search was used (has web_search_results or used_web_search flag)
-                                    web_search_used = bool(
-                                        state_values.get("web_search_results") or 
-                                        state_values.get("used_web_search", False) or
-                                        state_values.get("current_node") == "web_search"
+                                    
+                                    # Method 1: Check if web_search_results exist
+                                    has_web_results = bool(state_values.get("web_search_results"))
+                                    
+                                    # Method 2: Check if used_web_search flag is set
+                                    used_web_flag = state_values.get("used_web_search", False)
+                                    
+                                    # Method 3: Check if current_node is web_search
+                                    current_node_web = state_values.get("current_node") == "web_search"
+                                    
+                                    # Method 4: Check A2A messages for web search trigger
+                                    a2a_messages = state_values.get("a2a_messages", [])
+                                    has_web_search_a2a = any(
+                                        msg.get("receiver") == "web_search" and 
+                                        msg.get("message_type") == "content_not_found"
+                                        for msg in a2a_messages
                                     )
-                        except Exception:
+                                    
+                                    # Method 5: Check if next_node was set to web_search (from course_rag)
+                                    next_node_web = state_values.get("next_node") == "web_search"
+                                    
+                                    # Web search was used if any of these conditions are true
+                                    web_search_used = bool(
+                                        has_web_results or 
+                                        used_web_flag or 
+                                        current_node_web or
+                                        has_web_search_a2a or
+                                        next_node_web
+                                    )
+                        except Exception as e:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.error(f"Error checking web search state: {e}")
                             pass
                 
                 # Clear spinner and show web search indicator if web search was used
