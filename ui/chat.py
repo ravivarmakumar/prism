@@ -247,6 +247,9 @@ def render_chat_interface(generate_response):
         if '_podcast_style' in st.session_state:
             del st.session_state._podcast_style
         
+        # Auto-deselect podcast mode after generation
+        st.session_state.podcast_mode = False
+        
         # Clear processing flag when done
         st.session_state.is_processing_input = False
         st.rerun()
@@ -321,9 +324,34 @@ def render_chat_interface(generate_response):
             # Generate response with streaming
             with st.chat_message("assistant", avatar="🧠"):
                 # Show spinner while generating response
+                # Check if web search will be used (we'll check state after generation)
                 with st.spinner("Processing your question..."):
                     # Generate response
                     response = generate_response(user_query)
+                    
+                    # Check if web search was used by checking agent state
+                    web_search_used = False
+                    try:
+                        from core.agent import get_prism_agent
+                        agent = get_prism_agent()
+                        if agent and agent.graph:
+                            thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+                            config = {"configurable": {"thread_id": thread_id}}
+                            current_state = agent.graph.get_state(config)
+                            if current_state and current_state.values:
+                                state_values = current_state.values
+                                # Check if web search was used (has web_search_results or used_web_search flag)
+                                web_search_used = bool(
+                                    state_values.get("web_search_results") or 
+                                    state_values.get("used_web_search", False) or
+                                    state_values.get("current_node") == "web_search"
+                                )
+                    except Exception:
+                        pass
+                
+                # Show web search indicator if web search was used
+                if web_search_used:
+                    st.info("🌐 Searching the internet for current information...")
                 
                 # Stream the response word by word for better UX
                 def stream_response(text):
@@ -420,6 +448,9 @@ def render_chat_interface(generate_response):
         if '_flashcard_existing' in st.session_state:
             del st.session_state._flashcard_existing
         
+        # Auto-deselect flashcard mode after generation
+        st.session_state.flashcard_mode = False
+        
         # Clear processing flag when done
         st.session_state.is_processing_input = False
         st.rerun()
@@ -512,31 +543,32 @@ def render_chat_interface(generate_response):
                 st.markdown("---")
                 st.markdown("**Options:**")
 
-                # Flashcard option
-                flashcard_mode = st.checkbox(
-                    "📚 Generate Flashcards",
-                    value=st.session_state.flashcard_mode,
-                    key="flashcard_option_checkbox"
+                # Use radio buttons for mutually exclusive selection
+                content_type = st.radio(
+                    "Content Type:",
+                    options=["Regular Query", "📚 Generate Flashcards", "🎙️ Generate Podcast"],
+                    index=0 if not st.session_state.flashcard_mode and not st.session_state.podcast_mode 
+                          else (1 if st.session_state.flashcard_mode else 2),
+                    key="content_type_radio",
+                    horizontal=True
                 )
-                if flashcard_mode != st.session_state.flashcard_mode:
-                    st.session_state.flashcard_mode = flashcard_mode
-                    # Disable podcast mode if flashcard is enabled
-                    if flashcard_mode:
-                        st.session_state.podcast_mode = False
-                    st.rerun()
-
-                # Podcast option
-                podcast_mode = st.checkbox(
-                    "🎙️ Generate Podcast",
-                    value=st.session_state.podcast_mode,
-                    key="podcast_option_checkbox"
-                )
-                if podcast_mode != st.session_state.podcast_mode:
-                    st.session_state.podcast_mode = podcast_mode
-                    # Disable flashcard mode if podcast is enabled
-                    if podcast_mode:
+                
+                # Update session state based on selection
+                if content_type == "Regular Query":
+                    if st.session_state.flashcard_mode or st.session_state.podcast_mode:
                         st.session_state.flashcard_mode = False
-                    st.rerun()
+                        st.session_state.podcast_mode = False
+                        st.rerun()
+                elif content_type == "📚 Generate Flashcards":
+                    if not st.session_state.flashcard_mode or st.session_state.podcast_mode:
+                        st.session_state.flashcard_mode = True
+                        st.session_state.podcast_mode = False
+                        st.rerun()
+                elif content_type == "🎙️ Generate Podcast":
+                    if not st.session_state.podcast_mode or st.session_state.flashcard_mode:
+                        st.session_state.podcast_mode = True
+                        st.session_state.flashcard_mode = False
+                        st.rerun()
 
                 # Podcast style is always conversational (no selector needed)
                 if st.session_state.podcast_mode:
