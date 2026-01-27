@@ -356,17 +356,21 @@ def render_chat_interface(generate_response):
                                     a2a_messages = state_values.get("a2a_messages", [])
                                     has_web_search_a2a = False
                                     for msg in a2a_messages:
-                                        # Check both dict format and A2AMessage format
+                                        # A2A messages are stored as dicts with keys: sender, receiver, type, content, metadata, timestamp
                                         if isinstance(msg, dict):
-                                            receiver = msg.get("receiver") or msg.get("receiver")
-                                            msg_type = msg.get("type") or msg.get("message_type")
-                                        else:
-                                            receiver = getattr(msg, "receiver", None)
-                                            msg_type = getattr(msg, "message_type", None) or getattr(msg, "type", None)
-                                        
-                                        if receiver == "web_search" and (msg_type == "content_not_found" or msg_type == "web_search_completed"):
-                                            has_web_search_a2a = True
-                                            break
+                                            receiver = msg.get("receiver", "")
+                                            msg_type = msg.get("type", "")  # Note: stored as "type" not "message_type"
+                                            sender = msg.get("sender", "")
+                                            
+                                            # Check if course_rag sent a message to web_search
+                                            if (sender == "course_rag" and receiver == "web_search" and 
+                                                msg_type == "content_not_found"):
+                                                has_web_search_a2a = True
+                                                break
+                                            # Also check if web_search completed
+                                            if (sender == "web_search" and msg_type == "web_search_completed"):
+                                                has_web_search_a2a = True
+                                                break
                                     
                                     # Web search was used if any of these conditions are true
                                     web_search_used = bool(
