@@ -411,15 +411,9 @@ def render_chat_interface(generate_response):
                 # Stream the response
                 response_placeholder = st.empty()
                 full_response = ""
-                web_search_cleared = False
                 for chunk in stream_response(response):
                     full_response += chunk
                     response_placeholder.markdown(full_response + "▌")
-                    # Clear web search indicator once streaming starts (only once)
-                    if web_search_used and not web_search_cleared:
-                        if 'web_search_placeholder' in locals():
-                            web_search_placeholder.empty()
-                        web_search_cleared = True
                 
                 # Final update without cursor
                 response_placeholder.markdown(full_response)
