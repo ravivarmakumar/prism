@@ -323,27 +323,38 @@ def render_chat_interface(generate_response):
             
             # Generate response with streaming
             with st.chat_message("assistant", avatar="🧠"):
+                # Check if query likely needs web search (keywords that suggest current info needed)
+                query_lower = user_query.lower()
+                web_search_keywords = ["latest", "current", "recent", "new", "updated", "now", "today", "2024", "2025"]
+                likely_needs_web_search = any(keyword in query_lower for keyword in web_search_keywords)
+                
                 # Show spinner while generating response
                 spinner_placeholder = st.empty()
                 
                 # Generate response with spinner
+                # If query likely needs web search, show that message immediately
+                spinner_message = "🌐 Searching the internet for current information..." if likely_needs_web_search else "Processing your question..."
+                
                 with spinner_placeholder.container():
-                    with st.spinner("Processing your question..."):
+                    with st.spinner(spinner_message):
                         # Generate response (this will set st.session_state._last_query_used_web_search)
                         response = generate_response(user_query)
                 
-                # Check if web search was used - use the flag set by generate_response
+                # Check if web search was actually used - use the flag set by generate_response
                 web_search_used = st.session_state.get("_last_query_used_web_search", False)
                 
-                # Replace spinner with web search message if web search was used
-                spinner_placeholder.empty()
-                if web_search_used:
-                    # Show web search message instead of processing message
+                # If web search was actually used but we didn't show the message initially, show it now
+                if web_search_used and not likely_needs_web_search:
+                    # Replace spinner with web search message
+                    spinner_placeholder.empty()
                     with spinner_placeholder.container():
                         with st.spinner("🌐 Searching the internet for current information..."):
                             # Brief delay to show the message
                             import time
                             time.sleep(0.5)
+                elif not web_search_used and likely_needs_web_search:
+                    # Web search wasn't used but we showed the message - clear it
+                    spinner_placeholder.empty()
                 
                 # Stream the response word by word for better UX
                 def stream_response(text):
