@@ -254,7 +254,6 @@ def render_chat_interface(generate_response):
     
     # Check if we need to continue regular query generation after rerun
     if st.session_state.get('_query_generating'):
-        generating_msg = st.session_state.get('_query_generating_msg')
         user_query = st.session_state.get('_query_text')
         generate_response = st.session_state.get('_generate_response_func')
         
@@ -304,10 +303,6 @@ def render_chat_interface(generate_response):
                     del st.session_state.follow_up_questions
                 if 'original_query' in st.session_state:
                     del st.session_state.original_query
-            
-            # Remove the "generating" message from chat history
-            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
-                st.session_state.chat_history.pop()
             
             # Display response
             with st.chat_message("assistant", avatar="🧠"):
