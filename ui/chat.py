@@ -191,9 +191,7 @@ def handle_user_input_with_updates(user_query, generate_response):
 
 
 def handle_flashcard_generation(topic: str):
-    """Handle flashcard generation request."""
-    from core.flashcard_generator import FlashcardGenerator
-
+    """Handle flashcard generation request - sets up state and triggers rerun."""
     # Store topic
     st.session_state.flashcard_topic = topic
 
@@ -216,51 +214,14 @@ def handle_flashcard_generation(topic: str):
     }
     st.session_state.chat_history.append(generating_msg)
 
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._flashcard_generating = True
+    st.session_state._flashcard_generating_msg = generating_msg
+    st.session_state._flashcard_topic = topic
+    st.session_state._flashcard_existing = all_existing_flashcards
+
     # Rerun immediately to show user message and generating message
-    st.rerun()
-    
-    # After rerun, generate flashcards
-    with st.chat_message("assistant", avatar="🧠"):
-        with st.spinner("Generating flashcards..."):
-            generator = FlashcardGenerator()
-            result = generator.generate_flashcards(
-                topic=topic,
-                course_name=st.session_state.user_context.get('course'),
-                existing_flashcards=all_existing_flashcards,
-                num_flashcards=5
-            )
-
-            # Remove the "generating" message from chat history
-            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
-                st.session_state.chat_history.pop()
-
-            if result['flashcards']:
-                # Show response
-                response = f"Generated {len(result['flashcards'])} flashcards for '{topic}'! 📚"
-                if result['has_more']:
-                    response += " Click 'Generate 5 More' to get additional flashcards."
-                else:
-                    response += " " + (result.get('message', '') or '')
-
-                st.markdown(response)
-
-                # Store assistant response with flashcards attached (will be displayed by display_chat_history)
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": response,
-                    "flashcards": result['flashcards']
-                })
-            else:
-                error_msg = result.get('message', 'Could not generate flashcards. Please try a different topic.')
-                st.markdown(error_msg)
-                # Store assistant response without flashcards
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": error_msg
-                })
-
-    # Clear processing flag when done
-    st.session_state.is_processing_input = False
+    # Generation will continue in render_chat_interface on next render
     st.rerun()
 
 
