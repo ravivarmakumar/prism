@@ -329,60 +329,11 @@ def render_chat_interface(generate_response):
                 # Generate response with spinner
                 with spinner_placeholder.container():
                     with st.spinner("Processing your question..."):
-                        # Generate response
+                        # Generate response (this will set st.session_state._last_query_used_web_search)
                         response = generate_response(user_query)
                 
-                # Check if web search was used by checking agent state and A2A messages
-                web_search_used = False
-                try:
-                    from core.agent import get_prism_agent
-                    agent = get_prism_agent()
-                    if agent and agent.graph:
-                        thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-                        config = {"configurable": {"thread_id": thread_id}}
-                        current_state = agent.graph.get_state(config)
-                        if current_state and current_state.values:
-                            state_values = current_state.values
-                            
-                            # Method 1: Check if web_search_results exist (most reliable)
-                            has_web_results = bool(state_values.get("web_search_results"))
-                            
-                            # Method 2: Check if course_content_found is False (indicates web search was needed)
-                            course_content_found = state_values.get("course_content_found", True)
-                            needs_web_search = not course_content_found
-                            
-                            # Method 3: Check A2A messages for web search trigger
-                            # Look for message from course_rag to web_search with type "content_not_found"
-                            a2a_messages = state_values.get("a2a_messages", [])
-                            has_web_search_a2a = False
-                            for msg in a2a_messages:
-                                # A2A messages are stored as dicts with keys: sender, receiver, type, content, metadata, timestamp
-                                if isinstance(msg, dict):
-                                    receiver = msg.get("receiver", "")
-                                    msg_type = msg.get("type", "")  # Note: stored as "type" not "message_type"
-                                    sender = msg.get("sender", "")
-                                    
-                                    # Check if course_rag sent a message to web_search
-                                    if (sender == "course_rag" and receiver == "web_search" and 
-                                        msg_type == "content_not_found"):
-                                        has_web_search_a2a = True
-                                        break
-                                    # Also check if web_search completed
-                                    if (sender == "web_search" and msg_type == "web_search_completed"):
-                                        has_web_search_a2a = True
-                                        break
-                            
-                            # Web search was used if any of these conditions are true
-                            web_search_used = bool(
-                                has_web_results or 
-                                (needs_web_search and state_values.get("is_relevant", True)) or
-                                has_web_search_a2a
-                            )
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Error checking web search state: {e}")
-                    pass
+                # Check if web search was used - use the flag set by generate_response
+                web_search_used = st.session_state.get("_last_query_used_web_search", False)
                 
                 # Replace spinner with web search message if web search was used
                 spinner_placeholder.empty()

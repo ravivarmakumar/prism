@@ -81,6 +81,9 @@ def generate_response(user_query):
             thread_id=thread_id
         )
         
+        # Store web search flag in session state for UI to check
+        st.session_state._last_query_used_web_search = result.get("used_web_search", False)
+        
         # Handle follow-up questions (one at a time)
         if result.get("needs_follow_up"):
             follow_up_questions = result.get("follow_up_questions", [])
