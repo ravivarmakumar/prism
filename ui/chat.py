@@ -325,7 +325,27 @@ def render_chat_interface(generate_response):
             with st.chat_message("assistant", avatar="🧠"):
                 # Check if query likely needs web search (keywords that suggest current info needed)
                 query_lower = user_query.lower()
-                web_search_keywords = ["latest", "current", "recent", "new", "updated", "now", "today", "2024", "2025"]
+                # Expanded list of keywords that suggest web search is needed
+                web_search_keywords = [
+                    # Time-based keywords
+                    "latest", "current", "recent", "new", "updated", "now", "today", 
+                    "yesterday", "this week", "this month", "this year",
+                    # Year keywords (current and future)
+                    "2024", "2025", "2026", "2027",
+                    # Temporal indicators
+                    "recently", "lately", "just released", "just announced", "just came out",
+                    "breaking", "news", "announcement", "release",
+                    # Comparison keywords
+                    "newest", "newer", "most recent", "most current",
+                    # Information freshness indicators
+                    "up to date", "up-to-date", "updates", "what's new", "what is new",
+                    "trending", "popular now", "hot", "buzz",
+                    # Research/study related
+                    "recent research", "recent study", "recent findings", "recent developments",
+                    "latest research", "latest study", "latest findings", "latest developments",
+                    # Technology/software specific
+                    "version", "release", "update", "patch", "beta", "alpha"
+                ]
                 likely_needs_web_search = any(keyword in query_lower for keyword in web_search_keywords)
                 
                 # Show spinner while generating response
