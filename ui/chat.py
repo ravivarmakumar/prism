@@ -90,8 +90,8 @@ def display_chat_history():
 
 def handle_user_input_with_updates(user_query, generate_response):
     """
-    Handles user input and generates response.
-    A2A messages are created automatically in the background.
+    Handles user input - sets up state and triggers rerun.
+    Generation continues in render_chat_interface.
     
     Args:
         user_query: The user's question/input
@@ -100,9 +100,28 @@ def handle_user_input_with_updates(user_query, generate_response):
     if not user_query:
         return
     
-    # Note: User message already added to chat_history in form handler
-    
-    # Check if this is a follow-up answer
+    # Add user message to chat (show the actual question they asked)
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_query
+    })
+
+    # Show generating message in chat with loading indicator
+    generating_msg = {
+        "role": "assistant",
+        "content": "🤔 Processing your question... This may take a moment. ⏳"
+    }
+    st.session_state.chat_history.append(generating_msg)
+
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._query_generating = True
+    st.session_state._query_generating_msg = generating_msg
+    st.session_state._query_text = user_query
+    st.session_state._generate_response_func = generate_response
+
+    # Rerun immediately to show user message and generating message
+    # Generation will continue in render_chat_interface on next render
+    st.rerun()
     if st.session_state.get('follow_up_needed', False):
         # This is an answer to a follow-up question
         from core.agent import PRISMAgent
@@ -320,6 +339,107 @@ def render_chat_interface(generate_response):
             del st.session_state._podcast_topic
         if '_podcast_style' in st.session_state:
             del st.session_state._podcast_style
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+    
+    # Check if we need to continue regular query generation after rerun
+    if st.session_state.get('_query_generating'):
+        generating_msg = st.session_state.get('_query_generating_msg')
+        user_query = st.session_state.get('_query_text')
+        generate_response = st.session_state.get('_generate_response_func')
+        
+        # Check if this is a follow-up answer
+        if st.session_state.get('follow_up_needed', False):
+            # This is an answer to a follow-up question
+            from core.agent import PRISMAgent
+            
+            agent = PRISMAgent()
+            course_name = st.session_state.user_context.get('course')
+            user_context = st.session_state.user_context
+            thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+            
+            # Refine and process
+            result = agent.refine_query_with_follow_up(
+                original_query=st.session_state.original_query,
+                follow_up_answer=user_query,
+                course_name=course_name,
+                user_context=user_context,
+                thread_id=thread_id
+            )
+            
+            # Check if still needs follow-up (conversational flow)
+            if result.get("needs_follow_up"):
+                # Still vague, ask another follow-up question
+                follow_up_questions = result.get("follow_up_questions", [])
+                if follow_up_questions:
+                    follow_up_question = follow_up_questions[0]
+                    response = f"I need a bit more information. {follow_up_question}"
+                    # Keep follow-up state active for next question
+                    st.session_state.original_query = st.session_state.original_query + " " + user_query
+                    st.session_state.follow_up_questions = [follow_up_question]
+                else:
+                    response = result.get("response", "Processing your refined question...")
+                    # Clear follow-up state
+                    st.session_state.follow_up_needed = False
+                    if 'follow_up_questions' in st.session_state:
+                        del st.session_state.follow_up_questions
+                    if 'original_query' in st.session_state:
+                        del st.session_state.original_query
+            else:
+                # Query is now clear, show response
+                response = result.get("response", "Processing your refined question...")
+                # Clear follow-up state
+                st.session_state.follow_up_needed = False
+                if 'follow_up_questions' in st.session_state:
+                    del st.session_state.follow_up_questions
+                if 'original_query' in st.session_state:
+                    del st.session_state.original_query
+            
+            # Remove the "generating" message from chat history
+            if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                st.session_state.chat_history.pop()
+            
+            # Display response
+            with st.chat_message("assistant", avatar="🧠"):
+                st.markdown(response)
+            
+            # Store response in chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+        else:
+            # Regular query - clear any lingering follow-up state
+            st.session_state.follow_up_needed = False
+            if 'follow_up_questions' in st.session_state:
+                del st.session_state.follow_up_questions
+            if 'original_query' in st.session_state:
+                del st.session_state.original_query
+            
+            # Generate response with visible spinner
+            with st.chat_message("assistant", avatar="🧠"):
+                with st.spinner("🤔 Processing your question..."):
+                    # Generate response
+                    response = generate_response(user_query)
+                    
+                    # Remove the "generating" message from chat history
+                    if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                        st.session_state.chat_history.pop()
+                    
+                    # Show response
+                    st.markdown(response)
+            
+            # Store Agent Response in State
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+        # Clear flags
+        st.session_state._query_generating = False
+        if '_query_generating_msg' in st.session_state:
+            del st.session_state._query_generating_msg
+        if '_query_text' in st.session_state:
+            del st.session_state._query_text
+        if '_generate_response_func' in st.session_state:
+            del st.session_state._generate_response_func
         
         # Clear processing flag when done
         st.session_state.is_processing_input = False
@@ -599,9 +719,7 @@ def render_chat_interface(generate_response):
                         )
                         st.session_state.podcast_mode = False
                     else:
-                        # Store user message for regular queries
-                        st.session_state.chat_history.append({"role": "user", "content": current_input})
-                        # Process regular query
+                        # Process regular query (user message added in handle function)
                         handle_user_input_with_updates(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)
