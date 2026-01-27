@@ -344,33 +344,35 @@ def render_chat_interface(generate_response):
                                 if current_state and current_state.values:
                                     state_values = current_state.values
                                     
-                                    # Method 1: Check if web_search_results exist
+                                    # Method 1: Check if web_search_results exist (most reliable)
                                     has_web_results = bool(state_values.get("web_search_results"))
                                     
-                                    # Method 2: Check if used_web_search flag is set
-                                    used_web_flag = state_values.get("used_web_search", False)
+                                    # Method 2: Check if course_content_found is False (indicates web search was needed)
+                                    course_content_found = state_values.get("course_content_found", True)
+                                    needs_web_search = not course_content_found
                                     
-                                    # Method 3: Check if current_node is web_search
-                                    current_node_web = state_values.get("current_node") == "web_search"
-                                    
-                                    # Method 4: Check A2A messages for web search trigger
+                                    # Method 3: Check A2A messages for web search trigger
+                                    # Look for message from course_rag to web_search with type "content_not_found"
                                     a2a_messages = state_values.get("a2a_messages", [])
-                                    has_web_search_a2a = any(
-                                        msg.get("receiver") == "web_search" and 
-                                        msg.get("message_type") == "content_not_found"
-                                        for msg in a2a_messages
-                                    )
-                                    
-                                    # Method 5: Check if next_node was set to web_search (from course_rag)
-                                    next_node_web = state_values.get("next_node") == "web_search"
+                                    has_web_search_a2a = False
+                                    for msg in a2a_messages:
+                                        # Check both dict format and A2AMessage format
+                                        if isinstance(msg, dict):
+                                            receiver = msg.get("receiver") or msg.get("receiver")
+                                            msg_type = msg.get("type") or msg.get("message_type")
+                                        else:
+                                            receiver = getattr(msg, "receiver", None)
+                                            msg_type = getattr(msg, "message_type", None) or getattr(msg, "type", None)
+                                        
+                                        if receiver == "web_search" and (msg_type == "content_not_found" or msg_type == "web_search_completed"):
+                                            has_web_search_a2a = True
+                                            break
                                     
                                     # Web search was used if any of these conditions are true
                                     web_search_used = bool(
                                         has_web_results or 
-                                        used_web_flag or 
-                                        current_node_web or
-                                        has_web_search_a2a or
-                                        next_node_web
+                                        (needs_web_search and state_values.get("is_relevant", True)) or
+                                        has_web_search_a2a
                                     )
                         except Exception as e:
                             import logging
