@@ -1,6 +1,7 @@
 """Main agent orchestrator for LangGraph-based agentic RAG system."""
 
 import logging
+import streamlit as st
 from typing import Dict, Any, Optional, List
 from core.state import create_initial_state, AgentState
 from core.graph import create_agent_graph
@@ -102,7 +103,11 @@ class PRISMAgent:
                     "next_node": None,
                     "should_continue": True,
                     "final_response": None,
-                    "response_citations": []
+                    "response_citations": [],
+                    "evaluation_scores": None,
+                    "evaluation_passed": False,
+                    "refinement_attempts": 0,
+                    "a2a_messages": previous_state.values.get("a2a_messages", []) if previous_state.values else []
                 }
             else:
                 # First message in thread - create fresh state
@@ -115,6 +120,7 @@ class PRISMAgent:
                 logger.info("Created new state (first message in thread)")
             
             # Run the graph - use invoke for proper checkpointing
+            # Note: For real-time dashboard updates, we'll poll state during processing
             # LangGraph will automatically save state to checkpoint after invoke
             final_state = self.graph.invoke(initial_state, config=config)
             
@@ -182,6 +188,17 @@ class PRISMAgent:
                 "is_relevant": None,
                 "citations": []
             }
+
+
+# Initialize PRISM agent (singleton pattern for Streamlit)
+@st.cache_resource
+def get_prism_agent():
+    """Get or create PRISM agent instance."""
+    try:
+        return PRISMAgent()
+    except Exception as e:
+        logger.error(f"Error initializing PRISM agent: {e}")
+        return None
     
     def refine_query_with_follow_up(
         self,

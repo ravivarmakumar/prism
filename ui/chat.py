@@ -1,6 +1,7 @@
 """Chat UI components for PRISM."""
 
 import hashlib
+import os
 import streamlit as st
 
 
@@ -8,15 +9,15 @@ def display_flashcards(flashcards):
     """Display flashcards in an interactive format."""
     if not flashcards:
         return
-    
+
     st.markdown("### 📚 Flashcards")
-    
+
     for i, card in enumerate(flashcards, 1):
         with st.expander(f"Card {i}: {card['question'][:60]}...", expanded=False):
             st.markdown(f"**Q:** {card['question']}")
             st.markdown("---")
             st.markdown(f"**A:** {card['answer']}")
-            
+
             # Show source if available
             if card.get('source'):
                 source = card['source']
@@ -28,8 +29,34 @@ def display_flashcards(flashcards):
                     source_parts.append(f"Page {source['page']}")
                 elif source.get('timestamp'):
                     source_parts.append(f"Timestamp: {source['timestamp']}")
-                
+
                 st.caption(f"Source: {', '.join(source_parts)}")
+
+
+def display_podcast_player(podcast_data):
+    """Display podcast audio player with controls."""
+    if not podcast_data or not podcast_data.get('audio_path'):
+        return
+
+    st.markdown("### 🎙️ Podcast")
+
+    audio_path = podcast_data['audio_path']
+
+    # Check if file exists
+    if os.path.exists(audio_path):
+        # Read audio file
+        with open(audio_path, 'rb') as audio_file:
+            audio_bytes = audio_file.read()
+
+        # Display audio player with controls
+        st.audio(audio_bytes, format='audio/mp3', start_time=0)
+
+        # Show transcript/script in expander if available
+        if podcast_data.get('script'):
+            with st.expander("📄 View Transcript", expanded=False):
+                st.text(podcast_data['script'])
+    else:
+        st.error("Audio file not found. Please regenerate the podcast.")
 
 
 def display_chat_history():
@@ -38,7 +65,8 @@ def display_chat_history():
         role = message["role"]
         content = message["content"]
         flashcards = message.get("flashcards", [])  # Get flashcards if present
-        
+        podcast = message.get("podcast")  # Get podcast if present
+
         # User messages appear on the right with person icon
         if role == "user":
             with st.chat_message("user", avatar="👤"):
@@ -51,12 +79,19 @@ def display_chat_history():
                 if flashcards:
                     st.markdown("---")
                     display_flashcards(flashcards)
+                # Display podcast player if this message has a podcast
+                if podcast:
+                    st.markdown("---")
+                    display_podcast_player(podcast)
 
 
-def handle_user_input(user_query, generate_response):
+# AG-UI removed - keeping A2A and MCP only
+
+
+def handle_user_input_with_updates(user_query, generate_response):
     """
-    Handles user input and generates response.
-    Supports follow-up questions for vague queries.
+    Handles user input - sets up state and triggers rerun.
+    Generation continues in render_chat_interface.
     
     Args:
         user_query: The user's question/input
@@ -65,136 +100,83 @@ def handle_user_input(user_query, generate_response):
     if not user_query:
         return
     
-    # Check if this is a follow-up answer
-    if st.session_state.get('follow_up_needed', False):
-        # This is an answer to a follow-up question
-        from core.agent import PRISMAgent
-        
-        agent = PRISMAgent()
-        course_name = st.session_state.user_context.get('course')
-        user_context = st.session_state.user_context
-        thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
-        
-        # Refine and process
-        result = agent.refine_query_with_follow_up(
-            original_query=st.session_state.original_query,
-            follow_up_answer=user_query,
-            course_name=course_name,
-            user_context=user_context,
-            thread_id=thread_id
-        )
-        
-        # Store follow-up answer (without "Follow-up:" prefix for cleaner conversation)
-        st.session_state.chat_history.append({"role": "user", "content": user_query})
-        
-        # Check if still needs follow-up (conversational flow)
-        if result.get("needs_follow_up"):
-            # Still vague, ask another follow-up question
-            follow_up_questions = result.get("follow_up_questions", [])
-            if follow_up_questions:
-                follow_up_question = follow_up_questions[0]
-                response = f"I need a bit more information. {follow_up_question}"
-                # Keep follow-up state active for next question
-                st.session_state.original_query = st.session_state.original_query + " " + user_query  # Accumulate context
-                st.session_state.follow_up_questions = [follow_up_question]
-            else:
-                response = result.get("response", "Processing your refined question...")
-                # Clear follow-up state
-                st.session_state.follow_up_needed = False
-                if 'follow_up_questions' in st.session_state:
-                    del st.session_state.follow_up_questions
-                if 'original_query' in st.session_state:
-                    del st.session_state.original_query
-        else:
-            # Query is now clear, show response
-            response = result.get("response", "Processing your refined question...")
-            # Clear follow-up state
-            st.session_state.follow_up_needed = False
-            if 'follow_up_questions' in st.session_state:
-                del st.session_state.follow_up_questions
-            if 'original_query' in st.session_state:
-                del st.session_state.original_query
-        
-        # Display response
-        with st.chat_message("assistant", avatar="🧠"):
-            st.markdown(response)
-    else:
-        # Regular query - clear any lingering follow-up state
-        # This ensures that each new query starts fresh
-        st.session_state.follow_up_needed = False
-        if 'follow_up_questions' in st.session_state:
-            del st.session_state.follow_up_questions
-        if 'original_query' in st.session_state:
-            del st.session_state.original_query
-        
-        # Store User Query in State
-        st.session_state.chat_history.append({"role": "user", "content": user_query})
-        
-        # Generate and display response
-        with st.chat_message("assistant", avatar="🧠"):
-            with st.spinner(f"PRISM Agent (Course: {st.session_state.user_context['course']}) is thinking..."):
-                response = generate_response(user_query)
-    
-    # Store Agent Response in State
-    st.session_state.chat_history.append({"role": "assistant", "content": response})
+    # Add user message to chat (show the actual question they asked)
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_query
+    })
+
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._query_generating = True
+    st.session_state._query_text = user_query
+    st.session_state._generate_response_func = generate_response
+
+    # Rerun immediately to show user message
+    # Generation will continue in render_chat_interface on next render
     st.rerun()
 
 
 def handle_flashcard_generation(topic: str):
-    """Handle flashcard generation request."""
-    from core.flashcard_generator import FlashcardGenerator
-    
+    """Handle flashcard generation request - sets up state and triggers rerun."""
     # Store topic
     st.session_state.flashcard_topic = topic
-    
+
     # Get all existing flashcards from chat history to avoid duplicates
     all_existing_flashcards = []
     for msg in st.session_state.chat_history:
         if msg.get("role") == "assistant" and msg.get("flashcards"):
             all_existing_flashcards.extend(msg.get("flashcards", []))
-    
-    # Add user message to chat
+
+    # Add user message to chat (show the actual question they asked)
     st.session_state.chat_history.append({
-        "role": "user", 
-        "content": f"Generate flashcards for: {topic}"
+        "role": "user",
+        "content": topic  # Show the actual topic/question
     })
-    
-    # Generate flashcards
-    with st.chat_message("assistant", avatar="🧠"):
-        with st.spinner("Generating flashcards..."):
-            generator = FlashcardGenerator()
-            result = generator.generate_flashcards(
-                topic=topic,
-                course_name=st.session_state.user_context.get('course'),
-                existing_flashcards=all_existing_flashcards,
-                num_flashcards=5
-            )
-            
-            if result['flashcards']:
-                # Show response
-                response = f"Generated {len(result['flashcards'])} flashcards for '{topic}'! 📚"
-                if result['has_more']:
-                    response += " Click 'Generate 5 More' to get additional flashcards."
-                else:
-                    response += " " + (result.get('message', '') or '')
-                
-                st.markdown(response)
-                
-                # Store assistant response with flashcards attached (will be displayed by display_chat_history)
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": response,
-                    "flashcards": result['flashcards']
-                })
-            else:
-                error_msg = result.get('message', 'Could not generate flashcards. Please try a different topic.')
-                st.markdown(error_msg)
-                # Store assistant response without flashcards
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": error_msg
-                })
-    
+
+    # Show generating message in chat
+    generating_msg = {
+        "role": "assistant",
+        "content": "Generating flashcards... This may take a moment. 📚"
+    }
+    st.session_state.chat_history.append(generating_msg)
+
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._flashcard_generating = True
+    st.session_state._flashcard_generating_msg = generating_msg
+    st.session_state._flashcard_topic = topic
+    st.session_state._flashcard_existing = all_existing_flashcards
+
+    # Rerun immediately to show user message and generating message
+    # Generation will continue in render_chat_interface on next render
+    st.rerun()
+
+
+def handle_podcast_generation(topic: str, style: str = "conversational"):
+    """Handle podcast generation request - sets up state and triggers rerun."""
+    # Store topic
+    st.session_state.podcast_topic = topic
+
+    # Add user message to chat (show the actual question they asked)
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": topic  # Show the actual topic/question
+    })
+
+    # Show generating message in chat with loading indicator
+    generating_msg = {
+        "role": "assistant",
+        "content": "🎙️ Generating podcast... This may take a minute. ⏳"
+    }
+    st.session_state.chat_history.append(generating_msg)
+
+    # Store state for continuation after rerun (generation happens in render_chat_interface)
+    st.session_state._podcast_generating = True
+    st.session_state._podcast_generating_msg = generating_msg
+    st.session_state._podcast_topic = topic
+    st.session_state._podcast_style = style
+
+    # Rerun immediately to show user message and generating message
+    # Generation will continue in render_chat_interface on next render
     st.rerun()
 
 
@@ -202,6 +184,308 @@ def render_chat_interface(generate_response):
     """Renders the main chat interface."""
     # Main chat area - no header, just chat
     display_chat_history()
+    
+    # Check if we need to continue podcast generation after rerun
+    if st.session_state.get('_podcast_generating'):
+        from core.podcast_generator import run_async_podcast_generation
+        import uuid
+        
+        generating_msg = st.session_state.get('_podcast_generating_msg')
+        topic = st.session_state.get('_podcast_topic')
+        style = st.session_state.get('_podcast_style', 'conversational')
+        
+        # Generate podcast with visible spinner
+        with st.chat_message("assistant", avatar="🧠"):
+            # Show loading indicator with spinner
+            with st.spinner("🎙️ Generating podcast audio... This may take a minute."):
+                # Generate unique session ID for this podcast
+                session_id = str(uuid.uuid4())[:8]
+
+                # Run podcast generation with user context for personalization
+                result = run_async_podcast_generation(
+                    topic=topic,
+                    course_name=st.session_state.user_context.get('course'),
+                    session_id=session_id,
+                    style=style,
+                    user_context=st.session_state.user_context
+                )
+
+                # Remove the "generating" message from chat history
+                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                    st.session_state.chat_history.pop()
+
+                if result['success'] and result['audio_path']:
+                    # Show response
+                    response = f"Generated podcast for '{topic}'! 🎙️"
+                    st.markdown(response)
+
+                    # Store assistant response with podcast attached
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "podcast": {
+                            "audio_path": result['audio_path'],
+                            "script": result.get('script'),
+                            "topic": topic
+                        }
+                    })
+                else:
+                    error_msg = result.get('message', 'Could not generate podcast. Please try a different topic.')
+                    st.markdown(error_msg)
+                    # Store assistant response without podcast
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": error_msg
+                    })
+
+        # Clear flags
+        st.session_state._podcast_generating = False
+        if '_podcast_generating_msg' in st.session_state:
+            del st.session_state._podcast_generating_msg
+        if '_podcast_topic' in st.session_state:
+            del st.session_state._podcast_topic
+        if '_podcast_style' in st.session_state:
+            del st.session_state._podcast_style
+        
+        # Auto-deselect podcast mode after generation
+        st.session_state.podcast_mode = False
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+    
+    # Check if we need to continue regular query generation after rerun
+    if st.session_state.get('_query_generating'):
+        user_query = st.session_state.get('_query_text')
+        generate_response = st.session_state.get('_generate_response_func')
+        
+        # Check if this is a follow-up answer
+        if st.session_state.get('follow_up_needed', False):
+            # This is an answer to a follow-up question
+            from core.agent import PRISMAgent
+            
+            agent = PRISMAgent()
+            course_name = st.session_state.user_context.get('course')
+            user_context = st.session_state.user_context
+            thread_id = f"session_{st.session_state.user_context.get('student_id', 'default')}"
+            
+            # Refine and process
+            result = agent.refine_query_with_follow_up(
+                original_query=st.session_state.original_query,
+                follow_up_answer=user_query,
+                course_name=course_name,
+                user_context=user_context,
+                thread_id=thread_id
+            )
+            
+            # Check if still needs follow-up (conversational flow)
+            if result.get("needs_follow_up"):
+                # Still vague, ask another follow-up question
+                follow_up_questions = result.get("follow_up_questions", [])
+                if follow_up_questions:
+                    follow_up_question = follow_up_questions[0]
+                    response = f"I need a bit more information. {follow_up_question}"
+                    # Keep follow-up state active for next question
+                    st.session_state.original_query = st.session_state.original_query + " " + user_query
+                    st.session_state.follow_up_questions = [follow_up_question]
+                else:
+                    response = result.get("response", "Processing your refined question...")
+                    # Clear follow-up state
+                    st.session_state.follow_up_needed = False
+                    if 'follow_up_questions' in st.session_state:
+                        del st.session_state.follow_up_questions
+                    if 'original_query' in st.session_state:
+                        del st.session_state.original_query
+            else:
+                # Query is now clear, show response
+                response = result.get("response", "Processing your refined question...")
+                # Clear follow-up state
+                st.session_state.follow_up_needed = False
+                if 'follow_up_questions' in st.session_state:
+                    del st.session_state.follow_up_questions
+                if 'original_query' in st.session_state:
+                    del st.session_state.original_query
+            
+            # Display response
+            with st.chat_message("assistant", avatar="🧠"):
+                st.markdown(response)
+            
+            # Store response in chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+        else:
+            # Regular query - clear any lingering follow-up state
+            st.session_state.follow_up_needed = False
+            if 'follow_up_questions' in st.session_state:
+                del st.session_state.follow_up_questions
+            if 'original_query' in st.session_state:
+                del st.session_state.original_query
+            
+            # Generate response with streaming
+            with st.chat_message("assistant", avatar="🧠"):
+                # Check if query likely needs web search (keywords that suggest current info needed)
+                query_lower = user_query.lower()
+                # Expanded list of keywords that suggest web search is needed
+                web_search_keywords = [
+                    # Time-based keywords
+                    "latest", "current", "recent", "new", "updated", "now", "today", 
+                    "yesterday", "this week", "this month", "this year",
+                    # Year keywords (current and future)
+                    "2024", "2025", "2026", "2027",
+                    # Temporal indicators
+                    "recently", "lately", "just released", "just announced", "just came out",
+                    "breaking", "news", "announcement", "release",
+                    # Comparison keywords
+                    "newest", "newer", "most recent", "most current",
+                    # Information freshness indicators
+                    "up to date", "up-to-date", "updates", "what's new", "what is new",
+                    "trending", "popular now", "hot", "buzz",
+                    # Research/study related
+                    "recent research", "recent study", "recent findings", "recent developments",
+                    "latest research", "latest study", "latest findings", "latest developments",
+                    # Technology/software specific
+                    "version", "release", "update", "patch", "beta", "alpha"
+                ]
+                likely_needs_web_search = any(keyword in query_lower for keyword in web_search_keywords)
+                
+                # Show spinner while generating response
+                spinner_placeholder = st.empty()
+                
+                # Generate response with spinner
+                # If query likely needs web search, show that message immediately
+                if likely_needs_web_search:
+                    # Show web search message immediately
+                    with spinner_placeholder.container():
+                        with st.spinner("🌐 Searching the internet for current information..."):
+                            # Generate response (this will set st.session_state._last_query_used_web_search)
+                            response = generate_response(user_query)
+                else:
+                    # Show regular processing message
+                    with spinner_placeholder.container():
+                        with st.spinner("Processing your question..."):
+                            # Generate response (this will set st.session_state._last_query_used_web_search)
+                            response = generate_response(user_query)
+                
+                # Check if web search was actually used - use the flag set by generate_response
+                web_search_used = st.session_state.get("_last_query_used_web_search", False)
+                
+                # If web search was actually used but we didn't show the message initially, show it now
+                if web_search_used and not likely_needs_web_search:
+                    # Replace spinner with web search message and keep it visible briefly
+                    spinner_placeholder.empty()
+                    with spinner_placeholder.container():
+                        with st.spinner("🌐 Searching the internet for current information..."):
+                            # Brief delay to show the message
+                            import time
+                            time.sleep(1.0)  # Longer delay so user can see it
+                elif not web_search_used and likely_needs_web_search:
+                    # Web search wasn't used but we showed the message - just clear it
+                    spinner_placeholder.empty()
+                
+                # Stream the response word by word for better UX
+                def stream_response(text):
+                    """Generator that yields text in chunks for streaming effect."""
+                    words = text.split(' ')
+                    for i, word in enumerate(words):
+                        if i == 0:
+                            yield word
+                        else:
+                            yield ' ' + word
+                        # Small delay for smoother streaming (optional)
+                        import time
+                        time.sleep(0.02)  # 20ms delay between words
+                
+                # Stream the response
+                response_placeholder = st.empty()
+                full_response = ""
+                for chunk in stream_response(response):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                
+                # Final update without cursor
+                response_placeholder.markdown(full_response)
+            
+            # Store Agent Response in State
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+        # Clear flags
+        st.session_state._query_generating = False
+        if '_query_text' in st.session_state:
+            del st.session_state._query_text
+        if '_generate_response_func' in st.session_state:
+            del st.session_state._generate_response_func
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+    
+    # Check if we need to continue flashcard generation after rerun
+    if st.session_state.get('_flashcard_generating'):
+        from core.flashcard_generator import FlashcardGenerator
+        
+        generating_msg = st.session_state.get('_flashcard_generating_msg')
+        topic = st.session_state.get('_flashcard_topic')
+        existing_flashcards = st.session_state.get('_flashcard_existing', [])
+        
+        # Generate flashcards with visible spinner
+        with st.chat_message("assistant", avatar="🧠"):
+            with st.spinner("Generating flashcards..."):
+                generator = FlashcardGenerator()
+                result = generator.generate_flashcards(
+                    topic=topic,
+                    course_name=st.session_state.user_context.get('course'),
+                    existing_flashcards=existing_flashcards,
+                    num_flashcards=5
+                )
+
+                # Remove the "generating" message from chat history
+                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
+                    st.session_state.chat_history.pop()
+
+                if result['flashcards']:
+                    # Show response
+                    response = f"Generated {len(result['flashcards'])} flashcards for '{topic}'! 📚"
+                    if result['has_more']:
+                        response += " Click 'Generate 5 More' to get additional flashcards."
+                    else:
+                        response += " " + (result.get('message', '') or '')
+
+                    st.markdown(response)
+
+                    # Store assistant response with flashcards attached
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response,
+                        "flashcards": result['flashcards']
+                    })
+                else:
+                    error_msg = result.get('message', 'Could not generate flashcards. Please try a different topic.')
+                    st.markdown(error_msg)
+                    # Store assistant response without flashcards
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": error_msg
+                    })
+
+        # Clear flags
+        st.session_state._flashcard_generating = False
+        if '_flashcard_generating_msg' in st.session_state:
+            del st.session_state._flashcard_generating_msg
+        if '_flashcard_topic' in st.session_state:
+            del st.session_state._flashcard_topic
+        if '_flashcard_existing' in st.session_state:
+            del st.session_state._flashcard_existing
+        
+        # Auto-deselect flashcard mode after generation
+        st.session_state.flashcard_mode = False
+        
+        # Clear processing flag when done
+        st.session_state.is_processing_input = False
+        st.rerun()
+        return
+    
+    # Note: AG-UI removed. A2A and MCP are still active in the background.
     
     # Check if we should show "Generate 5 More" button
     # Only show if the last assistant message has flashcards and has_more flag
@@ -263,9 +547,13 @@ def render_chat_interface(generate_response):
     
     # Chat input with flashcard toggle button inside
     if st.session_state.user_context['is_ready']:
-        # Initialize flashcard mode in session state if not exists
+        # Initialize flashcard and podcast modes in session state if not exists
         if 'flashcard_mode' not in st.session_state:
             st.session_state.flashcard_mode = False
+        if 'podcast_mode' not in st.session_state:
+            st.session_state.podcast_mode = False
+        if 'podcast_style' not in st.session_state:
+            st.session_state.podcast_style = "conversational"
         if 'show_flashcard_options' not in st.session_state:
             st.session_state.show_flashcard_options = False
         if 'is_processing_input' not in st.session_state:
@@ -273,29 +561,47 @@ def render_chat_interface(generate_response):
         if 'last_input_value' not in st.session_state:
             st.session_state.last_input_value = ""
         
-        # Reset processing flag at the start of each render cycle if it was set
-        # This allows the next submission to proceed
-        if st.session_state.is_processing_input:
-            # Only reset if we're not in the middle of a form submission
-            # Check if the last message in chat history is an assistant message (processing complete)
-            if (st.session_state.chat_history and 
-                st.session_state.chat_history[-1].get("role") == "assistant"):
-                st.session_state.is_processing_input = False
+        # Don't auto-reset processing flag here - let it be controlled by handle_user_input
+        # The flag will be cleared when response is ready
         
-        # Show flashcard options popover OUTSIDE the form (only when plus was clicked)
+        # Show options popover OUTSIDE the form (only when plus was clicked)
         # This ensures it's visible and doesn't get hidden during form submission
-        if st.session_state.show_flashcard_options:
+        # Hide options when processing (podcast/flashcard generation in progress)
+        if st.session_state.show_flashcard_options and not st.session_state.is_processing_input:
             with st.container():
                 st.markdown("---")
                 st.markdown("**Options:**")
-                flashcard_mode = st.checkbox(
-                    "📚 Generate Flashcards",
-                    value=st.session_state.flashcard_mode,
-                    key="flashcard_option_checkbox"
+
+                # Use radio buttons for mutually exclusive selection
+                content_type = st.radio(
+                    "Content Type:",
+                    options=["Regular Query", "📚 Generate Flashcards", "🎙️ Generate Podcast"],
+                    index=0 if not st.session_state.flashcard_mode and not st.session_state.podcast_mode 
+                          else (1 if st.session_state.flashcard_mode else 2),
+                    key="content_type_radio",
+                    horizontal=True
                 )
-                if flashcard_mode != st.session_state.flashcard_mode:
-                    st.session_state.flashcard_mode = flashcard_mode
-                    st.rerun()
+                
+                # Update session state based on selection
+                if content_type == "Regular Query":
+                    if st.session_state.flashcard_mode or st.session_state.podcast_mode:
+                        st.session_state.flashcard_mode = False
+                        st.session_state.podcast_mode = False
+                        st.rerun()
+                elif content_type == "📚 Generate Flashcards":
+                    if not st.session_state.flashcard_mode or st.session_state.podcast_mode:
+                        st.session_state.flashcard_mode = True
+                        st.session_state.podcast_mode = False
+                        st.rerun()
+                elif content_type == "🎙️ Generate Podcast":
+                    if not st.session_state.podcast_mode or st.session_state.flashcard_mode:
+                        st.session_state.podcast_mode = True
+                        st.session_state.flashcard_mode = False
+                        st.rerun()
+
+                # Podcast style is always conversational (no selector needed)
+                if st.session_state.podcast_mode:
+                    st.session_state.podcast_style = "conversational"
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
@@ -315,9 +621,15 @@ def render_chat_interface(generate_response):
             with input_col2:
                 # Text input - styled to look like chat input
                 # Enter key will submit the form automatically
+                placeholder_text = "Ask your questions here..."
+                if st.session_state.flashcard_mode:
+                    placeholder_text = "Enter a topic for flashcards..."
+                elif st.session_state.podcast_mode:
+                    placeholder_text = "Enter a topic for podcast..."
+
                 user_input = st.text_input(
                     "",
-                    placeholder="Ask your questions here..." if not st.session_state.flashcard_mode else "Enter a topic for flashcards...",
+                    placeholder=placeholder_text,
                     key="custom_chat_input",
                     label_visibility="collapsed"
                 )
@@ -366,21 +678,27 @@ def render_chat_interface(generate_response):
                 if not is_duplicate:
                     # Update last input value to track form submissions
                     st.session_state.last_input_value = current_input
-                    
-                    # Set processing flag to prevent loops (will be cleared on next render)
+
+                    # Set processing flag (for tracking, not for UI)
                     st.session_state.is_processing_input = True
-                    
+
                     # Close options panel when submitting
                     st.session_state.show_flashcard_options = False
-                    
+
+                    # Process the input (A2A and MCP work in background)
+                    # Note: User message is added inside handle functions for flashcard/podcast
                     if st.session_state.flashcard_mode:
                         handle_flashcard_generation(current_input)
                         st.session_state.flashcard_mode = False
+                    elif st.session_state.podcast_mode:
+                        handle_podcast_generation(
+                            current_input,
+                            style=st.session_state.podcast_style
+                        )
+                        st.session_state.podcast_mode = False
                     else:
-                        handle_user_input(current_input, generate_response)
-                    
-                    # Don't clear the flag here - let it be cleared on the next render cycle
-                    # This prevents the form from processing again during the same submission
+                        # Process regular query (user message added in handle function)
+                        handle_user_input_with_updates(current_input, generate_response)
     else:
         st.chat_input("Enter details on the left to activate the chat.", disabled=True)
 

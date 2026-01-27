@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, Any
 from search.internet_search import InternetSearchAgent
+from core.a2a import a2a_manager
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,18 @@ def web_search_node(state: Dict[str, Any]) -> Dict[str, Any]:
     state["current_node"] = "web_search"
     state["should_continue"] = True
     state["next_node"] = "personalization"
+    
+    # Send A2A message to personalization agent
+    state = a2a_manager.send_message(
+        sender="web_search",
+        receiver="personalization",
+        message_type="web_search_completed",
+        content={
+            "results_count": len(search_citations),
+            "success": "not available" not in search_results.lower() and "error" not in search_results.lower()
+        },
+        state=state
+    )
     
     return state
 

@@ -7,6 +7,7 @@ from openai import OpenAI
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 import yaml
 from pathlib import Path
+from core.a2a import a2a_manager
 
 logger = logging.getLogger(__name__)
 
@@ -161,11 +162,29 @@ def relevance_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "Please ask a question that is relevant to the course material."
         )
         logger.info(f"Question not relevant: {result['reason']}")
+        
+        # Send A2A message
+        state = a2a_manager.send_message(
+            sender="relevance",
+            receiver="user",
+            message_type="not_relevant",
+            content={"reason": result['reason'], "query": state["query"]},
+            state=state
+        )
     else:
         # Question is relevant, proceed to course RAG
         state["should_continue"] = True
         state["next_node"] = "course_rag"
         logger.info("Question is relevant. Proceeding to course RAG.")
+        
+        # Send A2A message to course_rag agent
+        state = a2a_manager.send_message(
+            sender="relevance",
+            receiver="course_rag",
+            message_type="query_approved",
+            content={"query": state.get("refined_query", state["query"]), "reason": result['reason']},
+            state=state
+        )
     
     return state
 
