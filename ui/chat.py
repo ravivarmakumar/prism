@@ -106,20 +106,12 @@ def handle_user_input_with_updates(user_query, generate_response):
         "content": user_query
     })
 
-    # Show generating message in chat with loading indicator
-    generating_msg = {
-        "role": "assistant",
-        "content": "Processing your question..."
-    }
-    st.session_state.chat_history.append(generating_msg)
-
     # Store state for continuation after rerun (generation happens in render_chat_interface)
     st.session_state._query_generating = True
-    st.session_state._query_generating_msg = generating_msg
     st.session_state._query_text = user_query
     st.session_state._generate_response_func = generate_response
 
-    # Rerun immediately to show user message and generating message
+    # Rerun immediately to show user message
     # Generation will continue in render_chat_interface on next render
     st.rerun()
 
@@ -338,10 +330,6 @@ def render_chat_interface(generate_response):
                     # Generate response
                     response = generate_response(user_query)
                 
-                # Remove the "generating" message from chat history as soon as we start streaming
-                if st.session_state.chat_history and st.session_state.chat_history[-1] == generating_msg:
-                    st.session_state.chat_history.pop()
-                
                 # Stream the response word by word for better UX
                 def stream_response(text):
                     """Generator that yields text in chunks for streaming effect."""
@@ -370,8 +358,6 @@ def render_chat_interface(generate_response):
 
         # Clear flags
         st.session_state._query_generating = False
-        if '_query_generating_msg' in st.session_state:
-            del st.session_state._query_generating_msg
         if '_query_text' in st.session_state:
             del st.session_state._query_text
         if '_generate_response_func' in st.session_state:
