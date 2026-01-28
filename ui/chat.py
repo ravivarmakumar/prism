@@ -300,12 +300,66 @@ def render_chat_interface(generate_response):
             else:
                 # Query is now clear, show response
                 response = result.get("response", "Processing your refined question...")
+                
+                # Capture original query before clearing follow-up state
+                original_query = st.session_state.get('original_query', user_query)
+                
                 # Clear follow-up state
                 st.session_state.follow_up_needed = False
                 if 'follow_up_questions' in st.session_state:
                     del st.session_state.follow_up_questions
                 if 'original_query' in st.session_state:
                     del st.session_state.original_query
+                
+                # Log to MongoDB (only for completed queries, not follow-ups)
+                response_history = result.get("response_history", [])
+                source_type = result.get("source_type")
+                
+                if response_history and source_type and not result.get("needs_follow_up"):
+                    try:
+                        from prism_logging.mongo_logger import log_interaction
+                        from datetime import datetime, timezone
+                        
+                        # Extract response and score data
+                        response_1 = response_history[0].get("response", "") if len(response_history) > 0 else ""
+                        score_1 = response_history[0].get("score", 0.0) if len(response_history) > 0 else 0.0
+                        
+                        response_2 = response_history[1].get("response", "") if len(response_history) > 1 else None
+                        score_2 = response_history[1].get("score", 0.0) if len(response_history) > 1 else None
+                        
+                        response_3 = response_history[2].get("response", "") if len(response_history) > 2 else None
+                        score_3 = response_history[2].get("score", 0.0) if len(response_history) > 2 else None
+                        
+                        # Build logging payload
+                        log_payload = {
+                            "student_id": str(user_context.get("student_id", "")),
+                            "degree": str(user_context.get("degree", "")),
+                            "major": str(user_context.get("major", "")),
+                            "course": str(course_name),
+                            "source_type": source_type,
+                            "question": original_query,
+                            "response_1": response_1,
+                            "score_1": float(score_1),
+                        }
+                        
+                        # Add optional response_2 and score_2
+                        if response_2 is not None:
+                            log_payload["response_2"] = response_2
+                            log_payload["score_2"] = float(score_2)
+                        
+                        # Add optional response_3 and score_3
+                        if response_3 is not None:
+                            log_payload["response_3"] = response_3
+                            log_payload["score_3"] = float(score_3)
+                        
+                        # Log to MongoDB (non-blocking - errors are handled internally)
+                        log_interaction(log_payload)
+                        
+                    except Exception as e:
+                        # Don't break the app if logging fails
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to log interaction to MongoDB: {e}")
             
             # Display response
             with st.chat_message("assistant", avatar="🧠"):

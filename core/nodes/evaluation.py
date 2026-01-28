@@ -8,6 +8,20 @@ from typing import Dict, Any, List, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.tokenize import sent_tokenize
 import nltk
+import ssl
+
+# Fix SSL context for NLTK downloads (macOS certificate issue)
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+from retrieval.vector_store import PineconeVectorStore
+from config.settings import OPENAI_API_KEY
+
+logger = logging.getLogger(__name__)
 
 # Download required NLTK data
 # NLTK 3.8+ uses punkt_tab, older versions use punkt
@@ -16,17 +30,16 @@ try:
 except LookupError:
     try:
         nltk.download('punkt_tab', quiet=True)
-    except:
+    except Exception as e:
+        logger.warning(f"Could not download punkt_tab: {e}. Will use fallback sentence splitting.")
         # Fallback for older NLTK versions
         try:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
-            nltk.download('punkt', quiet=True)
-
-from retrieval.vector_store import PineconeVectorStore
-from config.settings import OPENAI_API_KEY
-
-logger = logging.getLogger(__name__)
+            try:
+                nltk.download('punkt', quiet=True)
+            except Exception as e2:
+                logger.warning(f"Could not download punkt: {e2}. Will use fallback sentence splitting.")
 
 
 class EvaluationAgent:
@@ -147,11 +160,28 @@ class EvaluationAgent:
             # Local coherence: average cosine similarity between adjacent sentences
             local_coherences = []
             for i in range(len(sentence_embeddings) - 1):
+                emb1 = sentence_embeddings[i]
+                emb2 = sentence_embeddings[i + 1]
+                
+                # Check for zero vectors or invalid embeddings
+                if np.all(emb1 == 0) or np.all(emb2 == 0):
+                    # Skip zero vectors
+                    continue
+                
+                # Check for NaN or Inf values
+                if np.any(np.isnan(emb1)) or np.any(np.isnan(emb2)) or \
+                   np.any(np.isinf(emb1)) or np.any(np.isinf(emb2)):
+                    # Skip invalid embeddings
+                    continue
+                
                 sim = cosine_similarity(
-                    sentence_embeddings[i].reshape(1, -1),
-                    sentence_embeddings[i + 1].reshape(1, -1)
+                    emb1.reshape(1, -1),
+                    emb2.reshape(1, -1)
                 )[0][0]
-                local_coherences.append(sim)
+                
+                # Check if similarity is valid
+                if not np.isnan(sim) and not np.isinf(sim):
+                    local_coherences.append(sim)
             
             local_coherence = np.mean(local_coherences) if local_coherences else 0.0
             
@@ -183,22 +213,42 @@ class EvaluationAgent:
             Score between 0.0 and 1.0
         """
         try:
+            # Check for zero vectors or invalid embeddings
+            if np.all(query_embedding == 0) or np.all(answer_embedding == 0):
+                return 0.0
+            
+            # Check for NaN or Inf values
+            if np.any(np.isnan(query_embedding)) or np.any(np.isnan(answer_embedding)) or \
+               np.any(np.isinf(query_embedding)) or np.any(np.isinf(answer_embedding)):
+                return 0.0
+            
             # Query-Answer similarity
             qa_similarity = cosine_similarity(
                 query_embedding.reshape(1, -1),
                 answer_embedding.reshape(1, -1)
             )[0][0]
             
+            # Check if similarity is valid
+            if np.isnan(qa_similarity) or np.isinf(qa_similarity):
+                qa_similarity = 0.0
+            
             # Answer-Context similarity (average)
             if context_embeddings:
                 ac_similarities = []
                 for ctx_emb in context_embeddings:
+                    # Check for zero or invalid context embeddings
+                    if np.all(ctx_emb == 0) or np.any(np.isnan(ctx_emb)) or np.any(np.isinf(ctx_emb)):
+                        continue
+                    
                     sim = cosine_similarity(
                         answer_embedding.reshape(1, -1),
                         ctx_emb.reshape(1, -1)
                     )[0][0]
-                    ac_similarities.append(sim)
-                ac_similarity = np.mean(ac_similarities)
+                    
+                    # Check if similarity is valid
+                    if not np.isnan(sim) and not np.isinf(sim):
+                        ac_similarities.append(sim)
+                ac_similarity = np.mean(ac_similarities) if ac_similarities else 0.0
             else:
                 ac_similarity = 0.0
             
@@ -353,6 +403,10 @@ class EvaluationAgent:
             Dictionary with scores: relevance, readability, coherence, coverage, overall
         """
         try:
+            # Ensure retrieved_chunks is a list
+            if retrieved_chunks is None:
+                retrieved_chunks = []
+            
             # Create embeddings
             query_emb = self._embed_one(query)
             answer_emb = self._embed_one(answer)
@@ -370,8 +424,15 @@ class EvaluationAgent:
             readability = self.readability_complexity(answer, degree_level)
             
             # Coherence: tokenize sentences and embed
-            sentences = sent_tokenize(answer)
-            sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            try:
+                sentences = sent_tokenize(answer)
+                sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            except LookupError:
+                # Fallback: split by periods if NLTK tokenizer not available
+                logger.warning("NLTK punkt_tab not available, using simple sentence splitting")
+                sentences = [s.strip() + '.' for s in answer.split('.') if s.strip()]
+                sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            
             coherence = self.coherence_fluency(sentence_embeddings)
             
             coverage = self.coverage(answer, query)
@@ -391,6 +452,11 @@ class EvaluationAgent:
             }
         except Exception as e:
             logger.error(f"Error evaluating course response: {e}", exc_info=True)
+            # Log more details about what might be wrong
+            logger.error(f"Query: {query[:100] if query else 'None'}")
+            logger.error(f"Answer length: {len(answer) if answer else 0}")
+            logger.error(f"Retrieved chunks count: {len(retrieved_chunks) if retrieved_chunks else 0}")
+            logger.error(f"Degree level: {degree_level}")
             # Return default scores on error
             return {
                 "relevance": 0.5,
@@ -420,6 +486,10 @@ class EvaluationAgent:
             Dictionary with all scores including credibility, consensus, consistency
         """
         try:
+            # Ensure web_sources is a list
+            if web_sources is None:
+                web_sources = []
+            
             # Base metrics (same as course)
             query_emb = self._embed_one(query)
             answer_emb = self._embed_one(answer)
@@ -430,8 +500,16 @@ class EvaluationAgent:
             relevance = self.relevance_score(query_emb, answer_emb, context_embeddings)
             readability = self.readability_complexity(answer, degree_level)
             
-            sentences = sent_tokenize(answer)
-            sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            # Coherence: tokenize sentences and embed
+            try:
+                sentences = sent_tokenize(answer)
+                sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            except LookupError:
+                # Fallback: split by periods if NLTK tokenizer not available
+                logger.warning("NLTK punkt_tab not available, using simple sentence splitting")
+                sentences = [s.strip() + '.' for s in answer.split('.') if s.strip()]
+                sentence_embeddings = [self._embed_one(s) for s in sentences if s.strip()]
+            
             coherence = self.coherence_fluency(sentence_embeddings)
             coverage = self.coverage(answer, query)
             
@@ -483,6 +561,11 @@ class EvaluationAgent:
             }
         except Exception as e:
             logger.error(f"Error evaluating web response: {e}", exc_info=True)
+            # Log more details about what might be wrong
+            logger.error(f"Query: {query[:100] if query else 'None'}")
+            logger.error(f"Answer length: {len(answer) if answer else 0}")
+            logger.error(f"Web sources count: {len(web_sources) if web_sources else 0}")
+            logger.error(f"Degree level: {degree_level}")
             return {
                 "relevance": 0.5,
                 "readability": 0.5,
@@ -522,9 +605,13 @@ def evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Evaluate based on source type
     if course_content_found:
         retrieved_chunks = state.get("retrieved_chunks", [])
+        # Ensure retrieved_chunks is a list, not None
+        if retrieved_chunks is None:
+            retrieved_chunks = []
         if not retrieved_chunks:
             # Fallback: try to get from course_context if available
             retrieved_chunks = []
+        logger.debug(f"Evaluating course response with {len(retrieved_chunks)} chunks")
         scores = agent.evaluate_course_response(
             query=query,
             answer=answer,
@@ -533,6 +620,9 @@ def evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         web_sources = state.get("web_search_citations", [])
+        if web_sources is None:
+            web_sources = []
+        logger.debug(f"Evaluating web response with {len(web_sources)} sources")
         scores = agent.evaluate_web_response(
             query=query,
             answer=answer,
@@ -547,6 +637,15 @@ def evaluation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     state["evaluation_scores"] = scores
     state["evaluation_passed"] = passed
     state["refinement_attempts"] = state.get("refinement_attempts", 0)
+    
+    # Track response and score in history for logging
+    if "response_history" not in state:
+        state["response_history"] = []
+    
+    state["response_history"].append({
+        "response": answer,
+        "score": scores["overall"]
+    })
     
     logger.info(f"Evaluation complete. Overall score: {scores['overall']:.3f}, Passed: {passed}")
     logger.debug(f"Detailed scores: {scores}")

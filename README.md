@@ -47,6 +47,27 @@ cp .env.example .env
 Edit `.env` and add your:
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `TAVILY_API_KEY`: Your Tavily API key for internet search
+- `MONGODB_URI`: Your MongoDB Atlas connection string (optional, for logging)
+
+**MongoDB Atlas Setup (Optional - for logging):**
+
+PRISM can log interactions to MongoDB Atlas. To enable logging:
+
+1. Set the `MONGODB_URI` environment variable:
+   ```bash
+   export MONGODB_URI="mongodb+srv://prism_user:YOUR_PASSWORD@prismtest.ffvupey.mongodb.net/?retryWrites=true&w=majority&appName=PRISMTEST"
+   ```
+
+2. Replace `YOUR_PASSWORD` with your actual MongoDB Atlas password.
+
+3. Test the connection:
+   ```bash
+   python scripts/test_mongo_connection.py
+   ```
+
+**Important:** Never commit your MongoDB URI or password to version control. The URI contains sensitive credentials.
+
+For production (Streamlit Cloud), add `MONGODB_URI` to your Streamlit secrets instead of environment variables.
 
 ### 4. Run the Application
 
@@ -114,10 +135,24 @@ PRISM Code/
 
 **Note**: Podcasts are generated as temporary files and will be cleaned up after the session.
 
+## MongoDB Logging
+
+PRISM logs Q&A interactions to MongoDB Atlas (database: `prism`, collection: `interactions`). Logging is **only enabled for regular query flows** - flashcards and podcasts are not logged.
+
+**Logged Fields:**
+- `student_id`, `degree`, `major`, `course`
+- `source_type`: "course" or "web"
+- `question`: User's question
+- `response_1`, `score_1`: First response attempt and score
+- `response_2`, `score_2`: Second response attempt (if applicable)
+- `response_3`, `score_3`: Third response attempt (if applicable)
+- `created_at`: UTC timestamp
+
+If MongoDB is unavailable, PRISM will continue to function normally - logging errors are handled gracefully and won't break the application.
+
 ## Future Enhancements
 
 - Knowledge graph integration
-- Database support for session persistence
 - Advanced evaluation metrics
 - Multi-modal support
 

@@ -107,6 +107,7 @@ class PRISMAgent:
                     "evaluation_scores": None,
                     "evaluation_passed": False,
                     "refinement_attempts": 0,
+                    "response_history": [],
                     "a2a_messages": previous_state.values.get("a2a_messages", []) if previous_state.values else []
                 }
             else:
@@ -136,7 +137,9 @@ class PRISMAgent:
                     "needs_follow_up": True,
                     "follow_up_questions": last_node_state["follow_up_questions"],
                     "is_relevant": None,
-                    "citations": []
+                    "citations": [],
+                    "response_history": [],
+                    "source_type": None
                 }
             
             # Check if question is not relevant
@@ -146,7 +149,9 @@ class PRISMAgent:
                     "needs_follow_up": False,
                     "follow_up_questions": [],
                     "is_relevant": False,
-                    "citations": []
+                    "citations": [],
+                    "response_history": [],
+                    "source_type": None
                 }
             
             # Return final response
@@ -168,15 +173,9 @@ class PRISMAgent:
                 "follow_up_questions": [],
                 "is_relevant": True,
                 "citations": last_node_state.get("response_citations", []),
-                "used_web_search": not last_node_state.get("course_content_found", False)
-            }
-            
-            return {
-                "response": "Error: No final state generated.",
-                "needs_follow_up": False,
-                "follow_up_questions": [],
-                "is_relevant": None,
-                "citations": []
+                "used_web_search": not last_node_state.get("course_content_found", False),
+                "response_history": last_node_state.get("response_history", []),
+                "source_type": "web" if not last_node_state.get("course_content_found", False) else "course"
             }
             
         except Exception as e:
@@ -186,7 +185,9 @@ class PRISMAgent:
                 "needs_follow_up": False,
                 "follow_up_questions": [],
                 "is_relevant": None,
-                "citations": []
+                "citations": [],
+                "response_history": [],
+                "source_type": None
             }
 
 
@@ -264,7 +265,9 @@ def get_prism_agent():
                 "needs_follow_up": True,
                 "follow_up_questions": [follow_up_question] if follow_up_question else [],
                 "is_relevant": None,
-                "citations": []
+                "citations": [],
+                "response_history": [],
+                "source_type": None
             }
         
         # Query is now clear, process it

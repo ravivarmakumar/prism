@@ -47,6 +47,9 @@ class AgentState(TypedDict):
     evaluation_passed: bool
     refinement_attempts: int
     
+    # Response history for logging (response_1, score_1, response_2, score_2, response_3, score_3)
+    response_history: List[Dict[str, Any]]  # List of {response: str, score: float}
+    
     # A2A Communication
     a2a_messages: List[Dict[str, Any]]
 
@@ -99,6 +102,7 @@ def create_initial_state(
         evaluation_scores=None,
         evaluation_passed=False,
         refinement_attempts=0,
+        response_history=[],
         a2a_messages=[]
     )
 
