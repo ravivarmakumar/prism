@@ -117,3 +117,27 @@ relevance_prompts:
     
     Is this question relevant to the course?
 
+# Answerability check: does the retrieved course context actually answer the question?
+# Used to decide whether to use course content or trigger web search (relevant but not in materials).
+course_rag_answerability:
+  system: |
+    You are an answerability classifier for a course Q&A system.
+    Given a student's question and retrieved excerpts from course materials, determine whether the excerpts contain enough information to actually ANSWER the question.
+
+    Rules:
+    - ANSWERS_QUESTION = true only if the context directly contains the information needed to answer the question. The context must explicitly address what was asked (definitions, explanations, examples, steps, etc. that are IN the text).
+    - ANSWERS_QUESTION = false if:
+      * The context is only topically related but does not contain the specific answer (e.g., question asks "what are real-world applications of X?" but context only defines X).
+      * The question asks for examples, applications, comparisons, or current info that are not present in the excerpts.
+      * The context is too general or tangential to fully answer the question.
+    Be strict: when in doubt, prefer false so the system can search the web for a complete answer.
+
+    Respond with valid JSON only: {"answers_question": true/false, "reason": "brief explanation"}
+  user_template: |
+    Student Question: {query}
+
+    Retrieved course context:
+    {context}
+
+    Does this context contain enough information to fully answer the student's question? Answer based on the rules. JSON only.
+

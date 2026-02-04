@@ -1,11 +1,20 @@
 """Course RAG Agent - Retrieves and checks course content."""
 
+import json
 import logging
+import re
+from pathlib import Path
 from typing import Dict, Any
+import yaml
+from openai import OpenAI
 from retrieval.retriever import CourseRetriever
 from core.a2a import a2a_manager
+from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 
 logger = logging.getLogger(__name__)
+
+# Max context length to send to answerability check (avoid token limits)
+ANSWERABILITY_CONTEXT_MAX_CHARS = 8000
 
 
 class CourseRAGAgent:
@@ -14,6 +23,49 @@ class CourseRAGAgent:
     def __init__(self):
         """Initialize the course RAG agent."""
         self.retriever = CourseRetriever()
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        config_path = Path(__file__).parent.parent.parent / "config" / "prompts.yaml"
+        with open(config_path, 'r') as f:
+            self.config = yaml.safe_load(f)
+    
+    def _check_answerability(self, query: str, context: str) -> bool:
+        """
+        Check if the retrieved course context actually answers the user's question.
+        Used to trigger web search when the question is relevant but not covered in materials.
+        
+        Returns True if context answers the question, False otherwise.
+        """
+        if not context or not context.strip():
+            return False
+        try:
+            prompt_config = self.config.get("course_rag_answerability", {})
+            system_prompt = prompt_config.get(
+                "system",
+                "Determine if the context answers the question. Respond with JSON: {\"answers_question\": true/false, \"reason\": \"brief explanation\"}"
+            )
+            user_template = prompt_config.get("user_template", "Question: {query}\n\nContext:\n{context}\n\nJSON only.")
+            # Truncate context to avoid token limits
+            context_for_check = context[:ANSWERABILITY_CONTEXT_MAX_CHARS]
+            if len(context) > ANSWERABILITY_CONTEXT_MAX_CHARS:
+                context_for_check += "\n\n[Context truncated...]"
+            user_prompt = user_template.format(query=query, context=context_for_check)
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+            result = json.loads(response.choices[0].message.content)
+            answers = result.get("answers_question", False)
+            reason = result.get("reason", "")
+            logger.info(f"Answerability check: answers_question={answers}, reason={reason[:100] if reason else ''}")
+            return answers
+        except Exception as e:
+            logger.warning(f"Answerability check failed: {e}. Defaulting to found=True (use course content).")
+            return True  # On error, use course content rather than failing over to web search
     
     def retrieve_and_check(
         self,
@@ -45,7 +97,6 @@ class CourseRAGAgent:
             logger.info(f"Retrieved {len(retrieved_chunks)} chunks from vector store for query: '{query}'")
             
             # Check if query is about a specific module and enhance it
-            import re
             query_lower = query.lower()
             module_match = re.search(r'module\s+(\d+|[a-z]+)', query_lower, re.IGNORECASE)
             if module_match:
@@ -167,14 +218,18 @@ class CourseRAGAgent:
                 "latest", "current", "recent", "new", "updated", "now", "today", "2024", "2025"
             ])
             
-            # If query asks for current info and we have chunks, check if chunks actually answer the question
-            # For "latest" type questions, course materials might be outdated, so prefer web search
+            # If query asks for current info and we have chunks, prefer web search (course may be outdated)
             if needs_current_info and retrieved_chunks:
                 logger.info(f"Query asks for current/updated information. Even though chunks found, will check web search for latest info.")
-                # Mark as not found to trigger web search for current information
                 found = False
+            elif retrieved_chunks:
+                # Check if the retrieved context actually answers the question (not just topically related).
+                # If not, trigger web search so we get an answer (relevant to course but not in materials).
+                found = self._check_answerability(query, context)
+                if not found:
+                    logger.info(f"Retrieved context does not fully answer the question - routing to web search.")
             else:
-                found = len(retrieved_chunks) > 0
+                found = False
             
             if found:
                 logger.info(f"Content found! Using {len(retrieved_chunks)} chunks with context length {len(context)} chars")
@@ -182,7 +237,7 @@ class CourseRAGAgent:
                 if needs_current_info:
                     logger.info(f"Query asks for current info - routing to web search for latest information")
                 else:
-                    logger.warning(f"No content found for query: '{query}'")
+                    logger.warning(f"Course content does not answer query - routing to web search: '{query}'")
             
             return {
                 "found": found,
