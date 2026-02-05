@@ -1,5 +1,5 @@
 """Script to ingest course documents into Pinecone vector store.
-Supports PDF files and VTT transcript files, with optional module structure."""
+Supports PDF, PPT/PPTX, and VTT transcript files, with optional module structure."""
 
 import os
 import sys
@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from retrieval.document_loader import MultimodalPDFLoader
 from retrieval.vtt_loader import VTTLoader
+from retrieval.ppt_loader import PPTLoader
 from retrieval.vector_store import PineconeVectorStore
 from config.settings import COURSES_PATH
 
@@ -30,8 +31,8 @@ def get_course_name_from_folder(folder_name: str) -> str:
 
 def process_file(file_path: Path, course_name: str, module_name: str, vector_store: PineconeVectorStore):
     """
-    Process a single file (PDF or VTT) and ingest into vector store.
-    
+    Process a single file (PDF, PPT/PPTX, or VTT) and ingest into vector store.
+
     Args:
         file_path: Path to the file
         course_name: Name of the course
@@ -39,7 +40,7 @@ def process_file(file_path: Path, course_name: str, module_name: str, vector_sto
         vector_store: Vector store instance
     """
     file_ext = file_path.suffix.lower()
-    
+
     try:
         if file_ext == '.pdf':
             logger.info(f"Processing PDF: {file_path.name} for course {course_name}" + (f", module {module_name}" if module_name else ""))
@@ -51,6 +52,13 @@ def process_file(file_path: Path, course_name: str, module_name: str, vector_sto
         elif file_ext == '.vtt':
             logger.info(f"Processing VTT transcript: {file_path.name} for course {course_name}" + (f", module {module_name}" if module_name else ""))
             loader = VTTLoader(
+                course_name=course_name,
+                document_path=str(file_path),
+                module_name=module_name
+            )
+        elif file_ext in ('.ppt', '.pptx'):
+            logger.info(f"Processing PPT/PPTX: {file_path.name} for course {course_name}" + (f", module {module_name}" if module_name else ""))
+            loader = PPTLoader(
                 course_name=course_name,
                 document_path=str(file_path),
                 module_name=module_name
@@ -101,51 +109,65 @@ def ingest_course_documents():
         subfolders = [f for f in course_folder.iterdir() if f.is_dir()]
         pdf_files = list(course_folder.glob("*.pdf"))
         vtt_files = list(course_folder.glob("*.vtt"))
-        
+        ppt_files = list(course_folder.glob("*.ppt")) + list(course_folder.glob("*.pptx"))
+
         # If there are subfolders, assume they are modules
         if subfolders:
             logger.info(f"Course {course_name} has {len(subfolders)} modules")
-            
+
             # Process each module
             for module_folder in subfolders:
                 module_name = module_folder.name
                 logger.info(f"Processing module: {module_name}")
-                
-                # Find PDF and VTT files in module folder
+
+                # Find PDF, VTT, and PPT/PPTX files in module folder
                 module_pdfs = list(module_folder.glob("*.pdf"))
                 module_vtts = list(module_folder.glob("*.vtt"))
-                
+                module_ppts = list(module_folder.glob("*.ppt")) + list(module_folder.glob("*.pptx"))
+
                 # Process PDFs in module
                 for pdf_file in module_pdfs:
                     docs, chunks = process_file(pdf_file, course_name, module_name, vector_store)
                     total_documents += docs
                     total_chunks += chunks
-                
+
                 # Process VTT files in module
                 for vtt_file in module_vtts:
                     docs, chunks = process_file(vtt_file, course_name, module_name, vector_store)
                     total_documents += docs
                     total_chunks += chunks
-        
+
+                # Process PPT/PPTX files in module
+                for ppt_file in module_ppts:
+                    docs, chunks = process_file(ppt_file, course_name, module_name, vector_store)
+                    total_documents += docs
+                    total_chunks += chunks
+
         # Also process files directly in course folder (for courses without modules)
-        if pdf_files or vtt_files:
+        if pdf_files or vtt_files or ppt_files:
             logger.info(f"Processing files directly in course folder (no modules)")
-            
+
             # Process PDFs
             for pdf_file in pdf_files:
                 docs, chunks = process_file(pdf_file, course_name, None, vector_store)
                 total_documents += docs
                 total_chunks += chunks
-            
+
             # Process VTT files
             for vtt_file in vtt_files:
                 docs, chunks = process_file(vtt_file, course_name, None, vector_store)
                 total_documents += docs
                 total_chunks += chunks
-        
+
+            # Process PPT/PPTX files
+            for ppt_file in ppt_files:
+                docs, chunks = process_file(ppt_file, course_name, None, vector_store)
+                total_documents += docs
+                total_chunks += chunks
+
         # If no files found at all
-        if not subfolders and not pdf_files and not vtt_files:
-            logger.warning(f"No PDF or VTT files found in {course_folder}")
+        if not subfolders and not pdf_files and not vtt_files and not ppt_files:
+            logger.warning(f"No PDF, VTT, or PPT/PPTX files found in {course_folder}")
     
     logger.info(
         f"Ingestion complete! Processed {total_documents} documents "

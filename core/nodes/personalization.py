@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 from openai import OpenAI
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
+from core.a2a import a2a_manager
 
 logger = logging.getLogger(__name__)
 
@@ -635,6 +636,19 @@ def personalization_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Added response to messages. Total messages in state: {len(state['messages'])}")
     
     logger.info("Personalized response generated.")
+    
+    # Send A2A message to evaluation agent
+    state = a2a_manager.send_message(
+        sender="personalization",
+        receiver="evaluation",
+        message_type="response_ready",
+        content={
+            "response_length": len(final_response),
+            "citations_count": len(state["response_citations"]),
+            "source": "web" if is_from_web else "course"
+        },
+        state=state
+    )
     
     return state
 

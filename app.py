@@ -4,21 +4,12 @@ from pathlib import Path
 
 # Import UI components
 from ui import styling, sidebar, chat, session
-from core.agent import PRISMAgent
+from core.agent import PRISMAgent, get_prism_agent
+from prism_logging.mongo_logger import log_interaction
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Initialize PRISM agent (singleton pattern for Streamlit)
-@st.cache_resource
-def get_prism_agent():
-    """Get or create PRISM agent instance."""
-    try:
-        return PRISMAgent()
-    except Exception as e:
-        logger.error(f"Error initializing PRISM agent: {e}")
-        return None
 
 
 def get_available_courses():
@@ -91,6 +82,9 @@ def generate_response(user_query):
             thread_id=thread_id
         )
         
+        # Store web search flag in session state for UI to check
+        st.session_state._last_query_used_web_search = result.get("used_web_search", False)
+        
         # Handle follow-up questions (one at a time)
         if result.get("needs_follow_up"):
             follow_up_questions = result.get("follow_up_questions", [])
@@ -109,6 +103,52 @@ def generate_response(user_query):
         # Clear follow-up state if we got here
         if 'follow_up_needed' in st.session_state:
             st.session_state.follow_up_needed = False
+        
+        # Log to MongoDB (only for completed regular queries, not follow-ups)
+        # Only log if we have response history and it's a regular query (not flashcards/podcasts)
+        response_history = result.get("response_history", [])
+        source_type = result.get("source_type")
+        
+        if response_history and source_type and not result.get("needs_follow_up"):
+            try:
+                # Extract response and score data
+                response_1 = response_history[0].get("response", "") if len(response_history) > 0 else ""
+                score_1 = response_history[0].get("score", 0.0) if len(response_history) > 0 else 0.0
+                
+                response_2 = response_history[1].get("response", "") if len(response_history) > 1 else None
+                score_2 = response_history[1].get("score", 0.0) if len(response_history) > 1 else None
+                
+                response_3 = response_history[2].get("response", "") if len(response_history) > 2 else None
+                score_3 = response_history[2].get("score", 0.0) if len(response_history) > 2 else None
+                
+                # Build logging payload
+                log_payload = {
+                    "student_id": str(user_context.get("student_id", "")),
+                    "degree": str(user_context.get("degree", "")),
+                    "major": str(user_context.get("major", "")),
+                    "course": str(course_name),
+                    "source_type": source_type,  # "course" or "web"
+                    "question": user_query,
+                    "response_1": response_1,
+                    "score_1": float(score_1),
+                }
+                
+                # Add optional response_2 and score_2
+                if response_2 is not None:
+                    log_payload["response_2"] = response_2
+                    log_payload["score_2"] = float(score_2)
+                
+                # Add optional response_3 and score_3
+                if response_3 is not None:
+                    log_payload["response_3"] = response_3
+                    log_payload["score_3"] = float(score_3)
+                
+                # Log to MongoDB (non-blocking - errors are handled internally)
+                log_interaction(log_payload)
+                
+            except Exception as e:
+                # Don't break the app if logging fails
+                logger.warning(f"Failed to log interaction to MongoDB: {e}")
         
         # Return response
         return result.get("response", "No response generated.")

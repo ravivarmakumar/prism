@@ -7,6 +7,7 @@ from openai import OpenAI
 from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 import yaml
 from pathlib import Path
+from core.a2a import a2a_manager
 
 logger = logging.getLogger(__name__)
 
@@ -303,12 +304,34 @@ def query_refinement_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["should_continue"] = False
         state["next_node"] = None
         logger.info(f"Query is vague. Asking follow-up question: {state['follow_up_questions'][0] if state['follow_up_questions'] else 'None'}")
+        
+        # Send A2A message
+        logger.info("Sending A2A message: query_refinement → user (follow_up_needed)")
+        state = a2a_manager.send_message(
+            sender="query_refinement",
+            receiver="user",
+            message_type="follow_up_needed",
+            content={"query": state["query"], "follow_up_questions": state["follow_up_questions"]},
+            state=state
+        )
+        logger.info(f"A2A message sent. Total A2A messages in state: {len(state.get('a2a_messages', []))}")
     else:
         # Query is clear, proceed to relevance check
         state["refined_query"] = state["query"]
         state["should_continue"] = True
         state["next_node"] = "relevance"
         logger.info("Query is clear. Proceeding to relevance check.")
+        
+        # Send A2A message to relevance agent
+        logger.info("Sending A2A message: query_refinement → relevance (query_refined)")
+        state = a2a_manager.send_message(
+            sender="query_refinement",
+            receiver="relevance",
+            message_type="query_refined",
+            content={"refined_query": state["refined_query"], "original_query": state["query"]},
+            state=state
+        )
+        logger.info(f"A2A message sent. Total A2A messages in state: {len(state.get('a2a_messages', []))}")
     
     return state
 
