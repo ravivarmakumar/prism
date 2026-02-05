@@ -659,22 +659,17 @@ def render_chat_interface(generate_response):
         
         # Use a form to create custom chat input with plus button inside
         with st.form(key="chat_form", clear_on_submit=True):
-            # Create a custom input that looks like chat_input with plus button inside
-            # Use columns to simulate the input box layout
+            # Hidden submit button first so Enter key always activates it (works for regular, podcast, flashcards)
+            enter_submit = st.form_submit_button("Send", key="enter_submit_hidden")
             input_col1, input_col2, input_col3 = st.columns([0.06, 0.84, 0.1])
-            
             with input_col1:
-                # Plus button - styled to look like it's inside the input
                 plus_clicked = st.form_submit_button(
                     "➕",
                     key="plus_button",
                     use_container_width=True,
                     help="Click to show flashcard options"
                 )
-            
             with input_col2:
-                # Text input - styled to look like chat input
-                # Enter key will submit the form automatically
                 placeholder_text = "Ask your questions here..."
                 if st.session_state.flashcard_mode:
                     placeholder_text = "Enter a topic for flashcards..."
@@ -687,37 +682,55 @@ def render_chat_interface(generate_response):
                     key="custom_chat_input",
                     label_visibility="collapsed"
                 )
-            
             with input_col3:
-                # Send button - smaller size
                 submit = st.form_submit_button(
                     "➤",
                     use_container_width=True,
-                    type="primary"
+                    type="primary",
+                    help="Send"
                 )
             
-            # Handle plus button click (only when clicked alone, not during Enter submission)
-            # When Enter is pressed, both plus_clicked and submit become True, so we check for input
+            # Hide only the first form submit button (Enter target) via JS so + and ➤ stay visible
+            # Script runs in iframe so use parent document to find the form
+            st.components.v1.html(
+                """
+                <script>
+                (function() {
+                    function hideFirstSubmit() {
+                        var doc = window.parent && window.parent.document ? window.parent.document : document;
+                        var form = doc.querySelector('[data-testid="stForm"]');
+                        if (form) {
+                            var btns = form.querySelectorAll('[data-testid="stFormSubmitButton"]');
+                            if (btns.length > 0) {
+                                var first = btns[0];
+                                first.style.cssText = 'visibility:hidden !important; position:absolute !important; left:-9999px !important; width:0 !important; height:0 !important; overflow:hidden !important;';
+                            }
+                        }
+                    }
+                    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hideFirstSubmit);
+                    else hideFirstSubmit();
+                    setTimeout(hideFirstSubmit, 150);
+                })();
+                </script>
+                """,
+                height=0
+            )
+            
+            # Handle plus button click (only when clicked alone; Enter activates hidden button)
             if plus_clicked and not user_input:
                 st.session_state.show_flashcard_options = not st.session_state.show_flashcard_options
                 st.rerun()
             
-            # Handle form submission (works with Enter key or send button)
-            # The challenge: detecting Enter key vs button clicks in Streamlit forms
-            # Strategy: Track if input changed to detect any form submission with input
             current_input = user_input.strip() if user_input else ""
             input_changed = current_input and current_input != st.session_state.get('last_input_value', '')
             
-            # Process if:
-            # 1. We have input
-            # 2. Form was submitted (submit button clicked OR Enter pressed OR input changed)
-            # 3. Not already processing
-            # 4. Not just the plus button clicked alone (which has no input)
+            # Process if we have input and form was submitted (➤ clicked, Enter pressed, or input_changed)
+            form_submitted = submit or enter_submit or input_changed
             should_process = (
                 current_input and 
-                (submit or input_changed) and 
+                form_submitted and 
                 not st.session_state.is_processing_input and
-                not (plus_clicked and not submit and not current_input)  # Exclude plus-only click
+                not (plus_clicked and not submit and not enter_submit and not current_input)  # Exclude plus-only click
             )
             
             if should_process:

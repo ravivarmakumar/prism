@@ -78,36 +78,56 @@ def render_sidebar(course_options, degree_options, handle_start_session):
                 st.rerun()
         else:
             # Input Form - fields are enabled when session is not active
-            # They will be disabled once session starts (handled by session state)
+            # Validate as user types: show error + red border when invalid
+            student_id_val = (st.session_state.get("student_id_input") or "").strip()
+            major_val = (st.session_state.get("major_input") or "").strip()
+            student_id_invalid = bool(student_id_val and not student_id_val.isdigit())
+            major_invalid = bool(major_val and any(c.isdigit() for c in major_val))
+
             st.text_input(
                 "Student ID",
                 key="student_id_input",
                 placeholder="e.g., 10005578",
                 disabled=st.session_state.user_context['is_ready'],
-                help="Unique identifier for the student"
+                help="Numbers only (no letters or symbols)"
             )
-            
+            if student_id_invalid:
+                st.caption(":red[Numbers only (no letters or symbols)]")
+
             st.selectbox(
                 "Degree",
                 options=degree_options,
                 key="degree_dropdown",
                 disabled=st.session_state.user_context['is_ready']
             )
-            
+
             st.text_input(
                 "Major",
                 key="major_input",
                 placeholder="e.g., Computer Science",
-                disabled=st.session_state.user_context['is_ready']
+                disabled=st.session_state.user_context['is_ready'],
+                help="Letters only (no numbers)"
             )
-            
+            if major_invalid:
+                st.caption(":red[Letters only (no numbers)]")
+
             st.selectbox(
                 "Course",
                 options=course_options,
                 key="course_dropdown",
                 disabled=st.session_state.user_context['is_ready']
             )
-            
+
+            # Red border on invalid inputs (first stTextInput = Student ID, second = Major)
+            if student_id_invalid or major_invalid:
+                selectors = []
+                if student_id_invalid:
+                    selectors.append("[data-testid='stSidebar'] [data-testid='stTextInput']:nth-of-type(1) input")
+                if major_invalid:
+                    selectors.append("[data-testid='stSidebar'] [data-testid='stTextInput']:nth-of-type(2) input")
+                css = ", ".join(selectors) + " { border: 2px solid #ff4b4b !important; border-radius: 4px; }"
+                st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
             # Start Session Button - no separator before it
             if st.button("Start PRISM Session", use_container_width=True):
                 handle_start_session(course_options, degree_options)

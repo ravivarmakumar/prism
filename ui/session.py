@@ -30,15 +30,26 @@ def initialize_session_state():
 def handle_start_session(course_options, degree_options):
     """
     Validates user input and transitions the application state to 'ready'.
+    Student ID must be digits only. Major must be letters only (no numbers).
     """
     # Grab values from the sidebar input fields
-    student_id = st.session_state.student_id_input
-    major = st.session_state.major_input
+    student_id = (st.session_state.student_id_input or "").strip()
+    major = (st.session_state.major_input or "").strip()
     course = st.session_state.course_dropdown
     degree = st.session_state.degree_dropdown
     
     if not student_id or not major or course == course_options[0] or degree == degree_options[0]:
         st.error("Please fill in all required fields to start the session.")
+        return
+    
+    # Student ID: digits only (no letters or symbols)
+    if not student_id.isdigit():
+        st.error("Student ID must contain only numbers (no letters or symbols).")
+        return
+    
+    # Major: letters only, no numbers (spaces allowed for names like "Computer Science")
+    if any(c.isdigit() for c in major):
+        st.error("Major must contain only letters (no numbers).")
         return
     
     # Update session state with validated context
